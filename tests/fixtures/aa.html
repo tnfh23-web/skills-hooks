@@ -1,0 +1,3 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>AA fixture</title><style>html,body{margin:0;padding:0;background:#fff}#aa{display:grid;grid-template-columns:repeat(7,1px);grid-template-rows:repeat(7,1px);width:7px;height:7px}</style></head>
+<body><div id="aa"></div><script>const aa=document.getElementById('aa');for(let y=0;y<7;y+=1)for(let x=0;x<7;x+=1){const cell=document.createElement('i');cell.style.background=x<=3?'rgb(0,0,0)':'rgb(255,255,255)';if(x===3&&y===3)cell.style.background='rgb(33,33,33)';aa.append(cell);}</script></body></html>

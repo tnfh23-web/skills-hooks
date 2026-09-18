@@ -54,10 +54,10 @@ function connectedRegions(diff, maxRegions = 12) {
   const { width, height, data } = diff;
   const visited = new Uint8Array(width * height);
   const regions = [];
-  // pixelmatch writes neutral grayscale pixels for matches and colored pixels for diffs.
+  // The input is pixelmatch's diffMask output: only counted differences have alpha.
   const isMismatch = (x, y) => {
     const i = (y * width + x) * 4;
-    return data[i] !== data[i + 1] || data[i] !== data[i + 2];
+    return data[i + 3] !== 0;
   };
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
@@ -247,18 +247,23 @@ async function main() {
     const overlayPath = path.join(outputDir, 'overlay.png');
     const dimensionMatch = reference.width === actual.width && reference.height === actual.height;
     const diff = new PNG({ width: actual.width, height: actual.height });
+    const mismatchMask = new PNG({ width: actual.width, height: actual.height });
     let mismatchPixels = 0;
-    if (dimensionMatch) mismatchPixels = pixelmatch(reference.data, actual.data, diff.data, actual.width, actual.height, { threshold: Number(args.threshold || 0.1), includeAA: false });
-    else { diff.data.fill(255); }
+    const comparisonOptions = { threshold: Number(args.threshold || 0.1), includeAA: false };
+    if (dimensionMatch) {
+      mismatchPixels = pixelmatch(reference.data, actual.data, diff.data, actual.width, actual.height, comparisonOptions);
+      // Keep the human-readable diff output, but use pixelmatch's actual mask for decisions.
+      pixelmatch(reference.data, actual.data, mismatchMask.data, actual.width, actual.height, { ...comparisonOptions, diffMask: true });
+    } else { diff.data.fill(255); mismatchMask.data.fill(255); }
     writePng(diffPath, diff);
     if (dimensionMatch) writePng(overlayPath, makeOverlay(reference, actual));
     const mask = new PNG({ width: actual.width, height: actual.height });
     for (let i = 0; i < mask.data.length; i += 4) {
-      const active = diff.data[i] !== diff.data[i + 1] || diff.data[i] !== diff.data[i + 2];
+      const active = mismatchMask.data[i + 3] !== 0;
       mask.data[i] = active ? 255 : 0; mask.data[i + 1] = active ? 255 : 0; mask.data[i + 2] = active ? 255 : 0; mask.data[i + 3] = 255;
     }
     writePng(maskPath, mask);
-    const regions = dimensionMatch ? connectedRegions(diff).map((region) => {
+    const regions = dimensionMatch ? connectedRegions(mismatchMask).map((region) => {
       const overlaps = domBoxes.map((box) => {
         const area = regionOverlap(region, box);
         return { box, area, coverage: area / Math.max(1, box.width * box.height) };

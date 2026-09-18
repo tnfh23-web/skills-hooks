@@ -8,15 +8,18 @@ const root = process.cwd();
 const testRoot = path.join(root, 'work', 'qa-contract');
 const passDir = path.join(testRoot, 'pass');
 const lowDir = path.join(testRoot, 'low-noise');
+const aaDir = path.join(testRoot, 'aa');
 const failDir = path.join(testRoot, 'fail');
 fs.rmSync(testRoot, { recursive: true, force: true });
 fs.mkdirSync(passDir, { recursive: true });
 fs.mkdirSync(lowDir, { recursive: true });
+fs.mkdirSync(aaDir, { recursive: true });
 fs.mkdirSync(failDir, { recursive: true });
 const fixture = path.join(root, 'tests', 'fixtures', 'index.html');
+const aaFixture = path.join(root, 'tests', 'fixtures', 'aa.html');
 
-function runQa(referencePath, outputDir) {
-  return spawnSync(process.execPath, ['tools/visual-qa.mjs', '--url', fixture, '--reference', referencePath, '--output', outputDir], { stdio: 'inherit' });
+function runQa(referencePath, outputDir, targetFixture = fixture) {
+  return spawnSync(process.execPath, ['tools/visual-qa.mjs', '--url', targetFixture, '--reference', referencePath, '--output', outputDir], { stdio: 'inherit' });
 }
 
 execFileSync(process.execPath, ['tools/visual-qa.mjs', '--url', fixture, '--output', path.join(passDir, 'bootstrap'), '--capture-only'], { stdio: 'inherit' });
@@ -31,6 +34,22 @@ const interactionChecks = JSON.parse(fs.readFileSync(path.join(passDir, 'qa', 'i
 assert.ok(interactionChecks.some((check) => check.type === 'tab' && check.status === 'PASS'));
 assert.ok(interactionChecks.some((check) => check.type === 'accordion' && check.status === 'PASS'));
 assert.ok(interactionChecks.some((check) => check.type === 'aria-expanded-toggle' && check.status === 'PASS'));
+
+execFileSync(process.execPath, ['tools/visual-qa.mjs', '--url', aaFixture, '--output', path.join(aaDir, 'bootstrap'), '--capture-only'], { stdio: 'inherit' });
+const aaReference = path.join(aaDir, 'reference.png');
+fs.copyFileSync(path.join(aaDir, 'bootstrap', 'actual.png'), aaReference);
+const aaImage = PNG.sync.read(fs.readFileSync(aaReference));
+const aaCenter = (3 * aaImage.width + 3) * 4;
+aaImage.data[aaCenter] = 1; aaImage.data[aaCenter + 1] = 1; aaImage.data[aaCenter + 2] = 1;
+fs.writeFileSync(aaReference, PNG.sync.write(aaImage));
+const aaRun = runQa(aaReference, path.join(aaDir, 'qa'), aaFixture);
+assert.equal(aaRun.status, 0, 'AA-only diff should not fail visual QA');
+const aaReport = JSON.parse(fs.readFileSync(path.join(aaDir, 'qa', 'report.json'), 'utf8'));
+assert.equal(aaReport.mismatchPixelCount, 0);
+assert.equal(aaReport.visualDecision.ignoredLowValueMismatch, false);
+assert.equal(aaReport.majorMismatchRegions.length, 0, 'AA-only diff must not create a mismatch region');
+const aaMask = PNG.sync.read(fs.readFileSync(path.join(aaDir, 'qa', 'mask.png')));
+assert.equal(aaMask.data.reduce((sum, value, index) => sum + (index % 4 === 0 && value > 0 ? 1 : 0), 0), 0, 'AA-only diff must not activate mask pixels');
 
 const lowNoise = PNG.sync.read(fs.readFileSync(reference));
 for (let i = 0; i < 80; i += 1) {
