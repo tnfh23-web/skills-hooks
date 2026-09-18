@@ -4,10 +4,15 @@
   "type": "module",
   "scripts": {
     "qa": "node tools/visual-qa.mjs",
+    "qa:spec": "node tools/reference-spec.mjs",
+    "qa:measure": "node tools/reference-measure.mjs",
+    "qa:geometry": "node tools/geometry-qa.mjs",
+    "qa:responsive": "node tools/responsive-qa.mjs",
     "test:qa": "node tests/qa-contract.test.mjs",
     "test:syntax": "node tests/syntax.test.mjs",
     "test:hook": "node tests/hook.test.mjs",
-    "test": "npm run test:syntax && npm run test:qa && npm run test:hook"
+    "test:workflow": "node tests/workflow-contract.test.mjs",
+    "test": "npm run test:syntax && npm run test:qa && npm run test:workflow && npm run test:hook"
   },
   "devDependencies": {
     "pixelmatch": "^6.0.0",

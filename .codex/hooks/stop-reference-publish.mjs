@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createSourceFingerprint } from '../../tools/source-fingerprint.mjs';
 
 function emit(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
@@ -8,6 +9,8 @@ function emit(payload) {
 const cwd = process.cwd();
 const reportPath = path.join(cwd, 'qa', 'report.json');
 const interactionPath = path.join(cwd, 'qa', 'interaction-report.json');
+const geometryPath = path.join(cwd, 'qa', 'geometry-report.json');
+const responsivePath = path.join(cwd, 'qa', 'responsive-report.json');
 
 if (!fs.existsSync(reportPath)) {
   emit({
@@ -42,6 +45,39 @@ if (report.status !== 'PASS' || missingArtifacts.length > 0) {
     systemMessage: `Fix the largest remaining mismatch and run verification again. ${reason} Inspect qa/actual.png, qa/diff.png, and qa/report.json.`
   });
   process.exit(0);
+}
+
+if (report.sourceFingerprint?.value && report.sourceRoot) {
+  const current = createSourceFingerprint(report.sourceRoot);
+  if (current.value !== report.sourceFingerprint.value) {
+    emit({
+      continue: false,
+      stopReason: 'The source changed after the latest visual verification.',
+      systemMessage: 'Run visual QA again after the latest source change. The PASS report is stale.'
+    });
+    process.exit(0);
+  }
+}
+
+for (const gate of [
+  { key: 'geometryRequired', file: geometryPath, label: 'geometry' },
+  { key: 'responsiveRequired', file: responsivePath, label: 'responsive' }
+]) {
+  if (!report.qualityGates?.[gate.key]) continue;
+  if (!fs.existsSync(gate.file)) {
+    emit({ continue: false, stopReason: `Required ${gate.label} verification has not run.`, systemMessage: `Run ${gate.label} QA and create ${gate.file} before completion.` });
+    process.exit(0);
+  }
+  try {
+    const gateReport = JSON.parse(fs.readFileSync(gate.file, 'utf8'));
+    if (gateReport.status !== 'PASS') {
+      emit({ continue: false, stopReason: `Required ${gate.label} verification failed.`, systemMessage: `Fix ${gate.label} QA failures in ${gate.file} before completion.` });
+      process.exit(0);
+    }
+  } catch (error) {
+    emit({ continue: false, stopReason: `The ${gate.label} verification report is not valid JSON.`, systemMessage: `Fix ${gate.file} and run verification again. ${error.message}` });
+    process.exit(0);
+  }
 }
 
 if (report.interactionQa?.required === true) {

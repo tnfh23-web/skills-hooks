@@ -4,6 +4,7 @@ import process from 'node:process';
 import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
 import { chromium } from 'playwright';
+import { createSourceFingerprint } from './source-fingerprint.mjs';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -153,6 +154,7 @@ async function readInteractionState(locator) {
         ariaSelected: node.getAttribute('aria-selected'),
         ariaExpanded: node.getAttribute('aria-expanded'),
         ariaCurrent: node.getAttribute('aria-current'),
+        dataQaAction: node.getAttribute('data-qa-action'),
         className: typeof node.className === 'string' ? node.className.slice(0, 160) : null,
         hidden: Boolean(node.hidden),
         open: 'open' in node ? Boolean(node.open) : null,
@@ -169,9 +171,23 @@ async function readInteractionState(locator) {
     const ids = `${element.getAttribute('aria-controls') || ''} ${element.dataset.target || ''}`.split(/\s+/).filter(Boolean);
     ids.forEach((id) => addRelated(document.getElementById(id) || (id.startsWith('#') ? document.querySelector(id) : null)));
     const group = element.closest('[data-qa-group], [data-pagination], [data-slider]');
-    group?.querySelectorAll('[aria-selected], [aria-current], [data-page], [data-slide], [data-active]').forEach(addRelated);
+    group?.querySelectorAll('[aria-selected], [data-page], [data-slide], [data-active], [aria-expanded], [data-current], [data-progress], [role="progressbar"]').forEach((node) => { if (node !== element) addRelated(node); });
     return { control: describe(element), related: [...related].map(describe).filter(Boolean) };
   });
+}
+
+function meaningfulStateChanged(before, after, kind) {
+  const normalize = (state) => {
+    const copy = JSON.parse(JSON.stringify(state));
+    // A data-qa-action control may add aria-current as an instrumentation marker.
+    // That marker alone is not a user-visible state change.
+    if (copy.control?.dataQaAction) copy.control.ariaCurrent = before.control.ariaCurrent;
+    return copy;
+  };
+  const changed = JSON.stringify(normalize(before)) !== JSON.stringify(normalize(after));
+  if (!changed) return false;
+  if (kind === 'slider' || kind === 'pagination') return true;
+  return true;
 }
 
 async function interactionQa(page, outputDir) {
@@ -180,7 +196,8 @@ async function interactionQa(page, outputDir) {
   const candidates = await page.evaluate((selectorText) => [...document.querySelectorAll(selectorText)].map((element, index) => {
     const tag = element.tagName.toLowerCase();
     const role = element.getAttribute('role');
-    const label = (element.innerText || element.getAttribute('aria-label') || element.getAttribute('title') || tag).replace(/\s+/g, ' ').trim().slice(0, 100);
+    const text = (element.innerText || '').replace(/\s+/g, ' ').trim();
+    const label = ((text.length > 1 ? text : '') || element.getAttribute('aria-label') || element.getAttribute('title') || text || tag).replace(/\s+/g, ' ').trim().slice(0, 100);
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
     const visible = rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
@@ -211,8 +228,9 @@ async function interactionQa(page, outputDir) {
         break;
       }
       const after = await readInteractionState(locator);
-      const stateChanged = JSON.stringify(before) !== JSON.stringify(after);
-      checks.push({ control: candidate.label, type: candidate.kind, status: stateChanged && focused ? 'PASS' : 'FAIL', focus: focused ? 'PASS' : 'FAIL', hover: 'PASS', urlBefore, urlAfter, before, after, stateChanged, failureReason: stateChanged ? (focused ? null : 'Click state changed, but focus could not be confirmed.') : 'Click completed but no observable state change was detected.' });
+      const stateChanged = meaningfulStateChanged(before, after, candidate.kind);
+      const boundaryNoop = !stateChanged && candidate.kind === 'slider' && /prev|previous/i.test(candidate.label) && before.related.some((item) => /^0?1(?:\s*\/|$)/.test(item.text));
+      checks.push({ control: candidate.label, type: candidate.kind, status: stateChanged && focused ? 'PASS' : boundaryNoop ? 'SKIP' : 'FAIL', focus: focused ? 'PASS' : 'FAIL', hover: 'PASS', urlBefore, urlAfter, before, after, stateChanged, failureReason: stateChanged ? (focused ? null : 'Click state changed, but focus could not be confirmed.') : boundaryNoop ? 'Boundary control was intentionally a no-op at the first item.' : 'Click completed but no observable state change was detected.' });
     } catch (error) {
       const urlAfter = page.url();
       checks.push({ control: candidate.label, type: candidate.kind, status: urlAfter !== urlBefore ? 'PASS' : 'FAIL', focus: 'FAIL', hover: 'FAIL', urlBefore, urlAfter, stateChanged: urlAfter !== urlBefore, failureReason: urlAfter !== urlBefore ? 'Navigation changed the URL; interaction failure skipped.' : error.message });
@@ -314,9 +332,16 @@ async function main() {
       interaction = await interactionQa(interactionPage, outputDir);
       await interactionPage.close();
     }
+    const qualityGates = {
+      geometryRequired: Boolean(args['require-geometry']),
+      responsiveRequired: Boolean(args['require-responsive'])
+    };
     const report = {
       generatedAt: new Date().toISOString(), captureMode, reference: { path: referencePath, width: reference.width, height: reference.height }, actual: { path: actualPath, width: actual.width, height: actual.height },
       viewport: { width, height, deviceScaleFactor: 1, browser: 'chromium' }, document: documentDimensions, mismatchPixelCount: mismatchPixels, mismatchRatio: dimensionMatch ? mismatchPixels / totalPixels : 1,
+      sourceFingerprint: createSourceFingerprint(process.cwd()),
+      sourceRoot: process.cwd(),
+      qualityGates,
       majorMismatchRegions: regionStats, visualDecision: {
         status: visualStatus,
         rule: 'PASS requires matching dimensions, mismatch ratio within tolerance, and no large meaningful mismatch region.',
