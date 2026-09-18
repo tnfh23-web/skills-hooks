@@ -1,5 +1,13 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>QA fixture</title><style>html,body{margin:0;width:100%;height:100%;background:#f4f1ea;color:#1b1b1b;font-family:Arial,sans-serif}main{box-sizing:border-box;width:100%;height:100%;padding:80px 100px}h1{margin:0 0 24px;font-size:48px;line-height:1.1}p{font-size:20px;line-height:1.5;max-width:560px}button{padding:12px 18px;background:#1b1b1b;color:white;border:0;border-radius:2px}</style></head>
-<body><main><h1>Reference QA fixture</h1><p>A deterministic page used to verify capture, comparison, interaction checks, and the stop gate.</p><button type="button">Continue</button></main></body>
-</html>
+<head><meta charset="utf-8"><title>QA fixture</title><style>html,body{margin:0;width:100%;height:100%;background:#f4f1ea;color:#1b1b1b;font-family:Arial,sans-serif}main{box-sizing:border-box;width:100%;height:100%;padding:64px 100px}h1{margin:0 0 18px;font-size:48px;line-height:1.1}p{font-size:20px;line-height:1.5;max-width:560px}.tabs{display:flex;gap:8px;margin:28px 0 14px}.tabs button,summary,#menu-toggle{padding:10px 14px;background:#1b1b1b;color:white;border:0;border-radius:2px;cursor:pointer}.tabs button[aria-selected="true"]{background:#b94a38}.panel{padding:12px 14px;background:#fff;border:1px solid #d5cfc2;max-width:560px}details{margin-top:18px;max-width:560px}summary{display:inline-block;list-style:none}#menu-panel{margin-top:10px;padding:12px;background:#e4ddd0;max-width:240px}</style></head>
+<body><main><h1>Reference QA fixture</h1><p>A deterministic page used to verify capture, comparison, interaction checks, and the stop gate.</p>
+<div class="tabs" role="tablist" aria-label="Fixture tabs"><button role="tab" aria-selected="true" aria-controls="tab-panel-a">Overview</button><button role="tab" aria-selected="false" aria-controls="tab-panel-b">Details</button></div>
+<div id="tab-panel-a" class="panel" role="tabpanel">Overview panel</div><div id="tab-panel-b" class="panel" role="tabpanel" hidden>Details panel</div>
+<details><summary>Open accordion</summary><p>Accordion content is visible only while open.</p></details>
+<button id="menu-toggle" type="button" aria-expanded="false" aria-controls="menu-panel">Menu</button><div id="menu-panel" hidden>Menu content</div>
+</main><script>
+const tabs=[...document.querySelectorAll('[role="tab"]')];
+tabs.forEach((tab)=>tab.addEventListener('click',()=>{tabs.forEach((item)=>{const active=item===tab;item.setAttribute('aria-selected',String(active));document.getElementById(item.getAttribute('aria-controls')).hidden=!active;});}));
+const menu=document.getElementById('menu-toggle');const panel=document.getElementById('menu-panel');menu.addEventListener('click',()=>{const open=menu.getAttribute('aria-expanded')!=='true';menu.setAttribute('aria-expanded',String(open));panel.hidden=!open;});
+</script></body></html>

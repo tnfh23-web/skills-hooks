@@ -34,9 +34,9 @@ npm run qa -- --reference path/to/reference.png --url http://127.0.0.1:3000/ --o
 
 The reference and actual capture must have exactly the same width and height. A dimension mismatch is a FAIL; never resize the reference to hide it. The runner fixes Chromium, viewport, device scale factor, font/image readiness, and motion state. It writes `qa/actual.png`, `qa/diff.png`, `qa/overlay.png`, `qa/mask.png`, and `qa/report.json`.
 
-`report.json` is evidence, not an opinion. It contains dimensions, mismatch pixel count/ratio, largest regions, DOM overlap hints, status, and failure reasons. Treat antialiasing noise as low-value only when the artifacts and numbers support that conclusion; do not self-declare PASS.
+`report.json` is evidence, not an opinion. It contains dimensions, mismatch pixel count/ratio, largest regions, DOM overlap hints, the tolerance decision and observed threshold values, status, and human-readable failure reasons. Matching dimensions are mandatory; a small mismatch ratio can PASS only when no meaningful/large region exceeds the per-region tolerance. Treat antialiasing noise as low-value only when the artifacts and numbers support that conclusion; do not self-declare PASS.
 
-For pages with detectable controls, the runner performs low-risk focus/hover checks and records `qa/interaction-report.json`. Use `--no-interaction-qa` only when the page has no required interaction and document that choice in the task summary.
+For pages with clearly detectable controls, the runner performs low-risk focus/hover checks, clicks stateful tabs, summaries, `aria-expanded` toggles, and marked pagination/slider/menu controls, then compares observable before/after state. It records the control type, click-before state, click-after state, status, and failure reason in `qa/interaction-report.json`. Navigation links are treated as successful navigation and are not forced into a same-page state assertion. Use `--no-interaction-qa` only when the page has no required interaction and document that choice in the task summary.
 
 ## Stop gate
 

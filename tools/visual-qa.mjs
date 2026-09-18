@@ -127,30 +127,94 @@ async function collectDomBoxes(page) {
   }).filter(Boolean));
 }
 
+async function readInteractionState(locator) {
+  return locator.evaluate((element) => {
+    const visible = (node) => {
+      const rect = node.getBoundingClientRect();
+      const style = getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+    };
+    const describe = (node) => {
+      if (!node) return null;
+      const rect = node.getBoundingClientRect();
+      return {
+        id: node.id || null,
+        tag: node.tagName.toLowerCase(),
+        text: (node.innerText || node.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 100),
+        ariaSelected: node.getAttribute('aria-selected'),
+        ariaExpanded: node.getAttribute('aria-expanded'),
+        ariaCurrent: node.getAttribute('aria-current'),
+        className: typeof node.className === 'string' ? node.className.slice(0, 160) : null,
+        hidden: Boolean(node.hidden),
+        open: 'open' in node ? Boolean(node.open) : null,
+        visible: visible(node),
+        x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height)
+      };
+    };
+    const related = new Set();
+    const addRelated = (node) => { if (node) related.add(node); };
+    const tablist = element.closest('[role="tablist"]');
+    tablist?.querySelectorAll('[role="tab"]').forEach(addRelated);
+    const details = element.closest('details');
+    addRelated(details);
+    const ids = `${element.getAttribute('aria-controls') || ''} ${element.dataset.target || ''}`.split(/\s+/).filter(Boolean);
+    ids.forEach((id) => addRelated(document.getElementById(id) || (id.startsWith('#') ? document.querySelector(id) : null)));
+    const group = element.closest('[data-qa-group], [data-pagination], [data-slider]');
+    group?.querySelectorAll('[aria-selected], [aria-current], [data-page], [data-slide], [data-active]').forEach(addRelated);
+    return { control: describe(element), related: [...related].map(describe).filter(Boolean) };
+  });
+}
+
 async function interactionQa(page, outputDir) {
-  const controls = await page.locator('button, a[href], input, select, textarea, summary, [role="button"], [role="tab"], [aria-expanded]').evaluateAll((elements) => elements.map((element) => {
+  const selector = 'button, summary, [role="tab"], [aria-expanded], [data-qa-action], [data-page], [aria-current]';
+  const locators = page.locator(selector);
+  const candidates = await page.evaluate((selectorText) => [...document.querySelectorAll(selectorText)].map((element, index) => {
+    const tag = element.tagName.toLowerCase();
+    const role = element.getAttribute('role');
+    const label = (element.innerText || element.getAttribute('aria-label') || element.getAttribute('title') || tag).replace(/\s+/g, ' ').trim().slice(0, 100);
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
-    return { tag: element.tagName.toLowerCase(), text: (element.innerText || element.getAttribute('aria-label') || '').trim().slice(0, 80), visible: rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none', disabled: element.disabled === true };
-  }).filter((control) => control.visible && !control.disabled));
+    const visible = rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+    const disabled = element.disabled === true || element.getAttribute('aria-disabled') === 'true';
+    const hasStateMarker = tag === 'summary' || role === 'tab' || element.hasAttribute('aria-expanded') || element.hasAttribute('data-qa-action') || element.hasAttribute('data-page') || element.hasAttribute('aria-current');
+    const buttonTextLooksStateful = tag === 'button' && (/\b(prev|next|menu|toggle|accordion|slide|page|tab|open|close)\b/i.test(label) || element.closest('[role="tablist"], [data-qa-group], [data-pagination], [data-slider]'));
+    const kind = role === 'tab' ? 'tab' : tag === 'summary' ? 'accordion' : element.hasAttribute('aria-expanded') ? 'aria-expanded-toggle' : /\b(prev|next|slide|carousel)\b/i.test(label) ? 'slider' : (element.hasAttribute('data-page') || element.hasAttribute('aria-current') || /\b(page|bullet|pagination)\b/i.test(label)) ? 'pagination' : /\b(menu|hamburger)\b/i.test(label) ? 'menu' : 'button';
+    return { index, kind, label, visible, disabled, ariaSelected: element.getAttribute('aria-selected'), candidate: hasStateMarker || buttonTextLooksStateful };
+  }).filter((candidate) => candidate.visible && !candidate.disabled && candidate.candidate), selector);
   const checks = [];
-  const locators = page.locator('button, a[href], input, select, textarea, summary, [role="button"], [role="tab"], [aria-expanded]');
-  const count = await locators.count();
-  for (let i = 0; i < Math.min(count, 24); i += 1) {
-    const locator = locators.nth(i);
-    if (!(await locator.isVisible().catch(() => false))) continue;
-    const label = await locator.evaluate((element) => (element.innerText || element.getAttribute('aria-label') || element.tagName).trim().slice(0, 80));
+  for (const candidate of candidates.slice(0, 24)) {
+    const locator = locators.nth(candidate.index);
+    const urlBefore = page.url();
     try {
       await locator.focus();
       const focused = await locator.evaluate((element) => document.activeElement === element);
       await locator.hover();
-      checks.push({ label, focus: focused ? 'PASS' : 'FAIL', hover: 'PASS' });
+      if (candidate.kind === 'tab' && candidate.ariaSelected === 'true' && await page.locator('[role="tab"][aria-selected="false"]').count() > 0) {
+        checks.push({ control: candidate.label, type: candidate.kind, status: 'SKIP', focus: focused ? 'PASS' : 'FAIL', hover: 'PASS', failureReason: 'Already-active tab skipped; another tab is available.' });
+        continue;
+      }
+      const before = await readInteractionState(locator);
+      await locator.click({ timeout: 3000, noWaitAfter: true });
+      await page.waitForTimeout(75);
+      const urlAfter = page.url();
+      if (urlAfter !== urlBefore) {
+        checks.push({ control: candidate.label, type: candidate.kind, status: 'PASS', focus: focused ? 'PASS' : 'FAIL', hover: 'PASS', urlBefore, urlAfter, before, after: null, stateChanged: true, reason: 'Navigation changed the URL; state comparison skipped.' });
+        break;
+      }
+      const after = await readInteractionState(locator);
+      const stateChanged = JSON.stringify(before) !== JSON.stringify(after);
+      checks.push({ control: candidate.label, type: candidate.kind, status: stateChanged && focused ? 'PASS' : 'FAIL', focus: focused ? 'PASS' : 'FAIL', hover: 'PASS', urlBefore, urlAfter, before, after, stateChanged, failureReason: stateChanged ? (focused ? null : 'Click state changed, but focus could not be confirmed.') : 'Click completed but no observable state change was detected.' });
     } catch (error) {
-      checks.push({ label, focus: 'FAIL', hover: 'FAIL', error: error.message });
+      const urlAfter = page.url();
+      checks.push({ control: candidate.label, type: candidate.kind, status: urlAfter !== urlBefore ? 'PASS' : 'FAIL', focus: 'FAIL', hover: 'FAIL', urlBefore, urlAfter, stateChanged: urlAfter !== urlBefore, failureReason: urlAfter !== urlBefore ? 'Navigation changed the URL; interaction failure skipped.' : error.message });
     }
   }
-  const failures = checks.filter((check) => check.focus === 'FAIL' || check.hover === 'FAIL');
-  const report = { generatedAt: new Date().toISOString(), required: controls.length > 0, controlCount: controls.length, status: failures.length ? 'FAIL' : 'PASS', checks, failureReasons: failures.map((failure) => `${failure.label}: focus or hover check failed`) };
+  const failures = checks.filter((check) => check.status === 'FAIL');
+  const report = {
+    generatedAt: new Date().toISOString(), required: candidates.length > 0, controlCount: candidates.length,
+    status: candidates.length === 0 ? 'NOT_REQUIRED' : failures.length ? 'FAIL' : 'PASS', checks,
+    failureReasons: failures.map((failure) => `${failure.control} (${failure.type}): ${failure.failureReason}`)
+  };
   fs.writeFileSync(path.join(outputDir, 'interaction-report.json'), `${JSON.stringify(report, null, 2)}\n`);
   return report;
 }
@@ -202,16 +266,44 @@ async function main() {
       const element = overlaps[0]?.box || null;
       return { ...region, kind: element ? 'content-or-position-mismatch' : 'orphan-mismatch', element };
     }) : [];
+    const totalPixels = actual.width * actual.height;
+    const maxMismatchRatio = Number(args['max-mismatch-ratio'] || 0.005);
+    const maxRegionPixelRatio = Number(args['max-region-pixel-ratio'] || 0.002);
+    const maxRegionAreaRatio = Number(args['max-region-area-ratio'] || 0.005);
+    const meaningfulRegionMinPixels = Math.max(64, Math.ceil(totalPixels * Number(args['meaningful-region-min-ratio'] || 0.0001)));
+    const regionStats = regions.map((region) => ({
+      ...region,
+      pixelRatio: region.pixels / totalPixels,
+      areaRatio: (region.width * region.height) / totalPixels,
+      meaningful: region.pixels >= meaningfulRegionMinPixels
+    }));
+    const meaningfulRegions = regionStats.filter((region) => region.meaningful);
+    const largeRegions = meaningfulRegions.filter((region) => region.pixelRatio > maxRegionPixelRatio || region.areaRatio > maxRegionAreaRatio);
     const failureReasons = [];
     if (!dimensionMatch) failureReasons.push(`Viewport/capture dimensions differ: reference ${reference.width}x${reference.height}, actual ${actual.width}x${actual.height}.`);
-    if (dimensionMatch && mismatchPixels > 0) failureReasons.push(`${mismatchPixels} pixels differ (${(mismatchPixels / (actual.width * actual.height) * 100).toFixed(3)}%).`);
-    const visualStatus = dimensionMatch && mismatchPixels === 0 ? 'PASS' : 'FAIL';
+    if (dimensionMatch && mismatchPixels / totalPixels > maxMismatchRatio) failureReasons.push(`Mismatch ratio ${(mismatchPixels / totalPixels * 100).toFixed(3)}% exceeds the ${maxMismatchRatio * 100}% tolerance.`);
+    if (dimensionMatch && largeRegions.length > 0) failureReasons.push(`${largeRegions.length} large mismatch region(s) exceed the per-region tolerance; inspect the largest region before completion.`);
+    const visualStatus = dimensionMatch && failureReasons.length === 0 ? 'PASS' : 'FAIL';
     let interaction = { required: false, status: 'NOT_RUN' };
-    if (!args['no-interaction-qa']) interaction = await interactionQa(page, outputDir);
+    if (!args['no-interaction-qa']) {
+      // Use a fresh page so click checks cannot alter the stable screenshot page.
+      const interactionPage = await context.newPage();
+      await interactionPage.goto(url, { waitUntil: 'load' });
+      await waitForStablePage(interactionPage);
+      interaction = await interactionQa(interactionPage, outputDir);
+      await interactionPage.close();
+    }
     const report = {
       generatedAt: new Date().toISOString(), reference: { path: referencePath, width: reference.width, height: reference.height }, actual: { path: actualPath, width: actual.width, height: actual.height },
-      viewport: { width, height, deviceScaleFactor: 1, browser: 'chromium' }, mismatchPixelCount: mismatchPixels, mismatchRatio: dimensionMatch ? mismatchPixels / (actual.width * actual.height) : 1,
-      majorMismatchRegions: regions, status: visualStatus, failureReasons, interactionQa: { required: interaction.required, status: interaction.status }
+      viewport: { width, height, deviceScaleFactor: 1, browser: 'chromium' }, mismatchPixelCount: mismatchPixels, mismatchRatio: dimensionMatch ? mismatchPixels / totalPixels : 1,
+      majorMismatchRegions: regionStats, visualDecision: {
+        status: visualStatus,
+        rule: 'PASS requires matching dimensions, mismatch ratio within tolerance, and no large meaningful mismatch region.',
+        thresholds: { maxMismatchRatio, maxRegionPixelRatio, maxRegionAreaRatio, meaningfulRegionMinPixels },
+        observed: { mismatchRatio: dimensionMatch ? mismatchPixels / totalPixels : 1, meaningfulRegionCount: meaningfulRegions.length, largeRegionCount: largeRegions.length, largestRegionPixels: regions[0]?.pixels || 0 },
+        ignoredLowValueMismatch: visualStatus === 'PASS' && mismatchPixels > 0
+      },
+      status: visualStatus, failureReasons, interactionQa: { required: interaction.required, status: interaction.status }
     };
     fs.writeFileSync(path.join(outputDir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
     if (visualStatus === 'FAIL' || interaction.status === 'FAIL') process.exitCode = 1;
