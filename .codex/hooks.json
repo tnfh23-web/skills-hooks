@@ -1,0 +1,17 @@
+{
+  "description": "Reference publishing V1 stop gate.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .codex/hooks/stop-reference-publish.mjs",
+            "timeout": 30,
+            "statusMessage": "Checking reference publishing verification"
+          }
+        ]
+      }
+    ]
+  }
+}

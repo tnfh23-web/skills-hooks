@@ -1,0 +1,27 @@
+node_modules/
+work/
+
+# Generated visual-QA output; keep QA scripts, fixtures, and configuration tracked.
+qa/*.png
+qa/*.json
+
+# Browser/test caches and reports.
+.playwright/
+playwright-report/
+test-results/
+.cache/
+*.log
+
+# OS/editor temporary files.
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+
+# Local environment and credentials.
+.env
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key

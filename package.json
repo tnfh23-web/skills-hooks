@@ -1,0 +1,17 @@
+{
+  "name": "reference-publish-v1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "qa": "node tools/visual-qa.mjs",
+    "test:qa": "node tests/qa-contract.test.mjs",
+    "test:syntax": "node tests/syntax.test.mjs",
+    "test:hook": "node tests/hook.test.mjs",
+    "test": "npm run test:syntax && npm run test:qa && npm run test:hook"
+  },
+  "devDependencies": {
+    "pixelmatch": "^6.0.0",
+    "pngjs": "^7.0.0",
+    "playwright": "^1.55.0"
+  }
+}
