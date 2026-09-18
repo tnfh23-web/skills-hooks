@@ -9,17 +9,20 @@ const testRoot = path.join(root, 'work', 'qa-contract');
 const passDir = path.join(testRoot, 'pass');
 const lowDir = path.join(testRoot, 'low-noise');
 const aaDir = path.join(testRoot, 'aa');
+const fullPageDir = path.join(testRoot, 'full-page');
 const failDir = path.join(testRoot, 'fail');
 fs.rmSync(testRoot, { recursive: true, force: true });
 fs.mkdirSync(passDir, { recursive: true });
 fs.mkdirSync(lowDir, { recursive: true });
 fs.mkdirSync(aaDir, { recursive: true });
+fs.mkdirSync(fullPageDir, { recursive: true });
 fs.mkdirSync(failDir, { recursive: true });
 const fixture = path.join(root, 'tests', 'fixtures', 'index.html');
 const aaFixture = path.join(root, 'tests', 'fixtures', 'aa.html');
+const fullPageFixture = path.join(root, 'tests', 'fixtures', 'full-page.html');
 
-function runQa(referencePath, outputDir, targetFixture = fixture) {
-  return spawnSync(process.execPath, ['tools/visual-qa.mjs', '--url', targetFixture, '--reference', referencePath, '--output', outputDir], { stdio: 'inherit' });
+function runQa(referencePath, outputDir, targetFixture = fixture, extraArgs = []) {
+  return spawnSync(process.execPath, ['tools/visual-qa.mjs', '--url', targetFixture, '--reference', referencePath, '--output', outputDir, ...extraArgs], { stdio: 'inherit' });
 }
 
 execFileSync(process.execPath, ['tools/visual-qa.mjs', '--url', fixture, '--output', path.join(passDir, 'bootstrap'), '--capture-only'], { stdio: 'inherit' });
@@ -29,6 +32,7 @@ execFileSync(process.execPath, ['tools/visual-qa.mjs', '--url', fixture, '--refe
 const passReport = JSON.parse(fs.readFileSync(path.join(passDir, 'qa', 'report.json'), 'utf8'));
 assert.equal(passReport.status, 'PASS');
 assert.equal(passReport.mismatchPixelCount, 0);
+assert.equal(passReport.captureMode, 'viewport');
 assert.equal(passReport.interactionQa.status, 'PASS');
 const interactionChecks = JSON.parse(fs.readFileSync(path.join(passDir, 'qa', 'interaction-report.json'), 'utf8')).checks;
 assert.ok(interactionChecks.some((check) => check.type === 'tab' && check.status === 'PASS'));
@@ -50,6 +54,34 @@ assert.equal(aaReport.visualDecision.ignoredLowValueMismatch, false);
 assert.equal(aaReport.majorMismatchRegions.length, 0, 'AA-only diff must not create a mismatch region');
 const aaMask = PNG.sync.read(fs.readFileSync(path.join(aaDir, 'qa', 'mask.png')));
 assert.equal(aaMask.data.reduce((sum, value, index) => sum + (index % 4 === 0 && value > 0 ? 1 : 0), 0), 0, 'AA-only diff must not activate mask pixels');
+
+const fullPageArgs = ['--capture-mode', 'fullPage', '--width', '1440', '--height', '900'];
+execFileSync(process.execPath, ['tools/visual-qa.mjs', '--url', fullPageFixture, '--output', path.join(fullPageDir, 'bootstrap'), '--capture-only', ...fullPageArgs], { stdio: 'inherit' });
+const fullPageReference = path.join(fullPageDir, 'reference.png');
+fs.copyFileSync(path.join(fullPageDir, 'bootstrap', 'actual.png'), fullPageReference);
+const fullPageRun = runQa(fullPageReference, path.join(fullPageDir, 'qa'), fullPageFixture, fullPageArgs);
+assert.equal(fullPageRun.status, 0, 'matching full-page reference should pass');
+const fullPageReport = JSON.parse(fs.readFileSync(path.join(fullPageDir, 'qa', 'report.json'), 'utf8'));
+assert.equal(fullPageReport.status, 'PASS');
+assert.equal(fullPageReport.captureMode, 'fullPage');
+assert.deepEqual({ width: fullPageReport.viewport.width, height: fullPageReport.viewport.height }, { width: 1440, height: 900 });
+assert.equal(fullPageReport.reference.width, fullPageReport.actual.width);
+assert.ok(fullPageReport.actual.height > fullPageReport.viewport.height);
+assert.equal(fullPageReport.document.height, fullPageReport.actual.height);
+
+const tooTallReferenceImage = PNG.sync.read(fs.readFileSync(fullPageReference));
+const extendedReference = new PNG({ width: tooTallReferenceImage.width, height: tooTallReferenceImage.height + 100 });
+for (let y = 0; y < extendedReference.height; y += 1) {
+  const sourceY = Math.min(y, tooTallReferenceImage.height - 1);
+  tooTallReferenceImage.data.copy(extendedReference.data, y * extendedReference.width * 4, sourceY * tooTallReferenceImage.width * 4, (sourceY + 1) * tooTallReferenceImage.width * 4);
+}
+const tooTallReferencePath = path.join(fullPageDir, 'too-tall-reference.png');
+fs.writeFileSync(tooTallReferencePath, PNG.sync.write(extendedReference));
+const fullPageDimensionRun = runQa(tooTallReferencePath, path.join(fullPageDir, 'dimension-fail'), fullPageFixture, fullPageArgs);
+assert.equal(fullPageDimensionRun.status, 1, 'full-page height mismatch should fail');
+const fullPageDimensionReport = JSON.parse(fs.readFileSync(path.join(fullPageDir, 'dimension-fail', 'report.json'), 'utf8'));
+assert.equal(fullPageDimensionReport.status, 'FAIL');
+assert.ok(fullPageDimensionReport.failureReasons.some((reason) => /Full-page capture\/reference dimensions/i.test(reason)));
 
 const lowNoise = PNG.sync.read(fs.readFileSync(reference));
 for (let i = 0; i < 80; i += 1) {

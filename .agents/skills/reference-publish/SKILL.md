@@ -12,7 +12,7 @@ Reconstruct the intended web interface while preserving reference fidelity. The 
 1. **SEE** — inspect the reference, available local assets, fonts, and any existing page before coding.
 2. **INFER** — implement only interactions that are clear or strongly implied by visible affordances. If evidence is absent, do not invent behavior.
 3. **BUILD** — implement HTML/CSS/JS using local resources first. Match typography, wrapping, dimensions, spacing, crop, positioning, color, borders, radius, alignment, and z-order. Exact pixel corrections are acceptable.
-4. **CAPTURE** — run the repository Visual QA command against a fixed Chromium viewport. It waits for fonts, images, and layout stability and disables motion for the comparison capture.
+4. **CAPTURE** — run the repository Visual QA command against a fixed Chromium viewport. Choose `viewport` for a single-screen reference or `fullPage` for a long document reference. It waits for fonts, images, and layout stability and disables motion for the comparison capture. A long reference image does not become the browser viewport height.
 5. **COMPARE / DIAGNOSE** — inspect `qa/report.json`, `qa/actual.png`, and `qa/diff.png`. Use the reported largest mismatch regions and DOM labels to choose one high-impact cause.
 6. **REPAIR** — change the smallest related scope, then capture and compare again. Record before/after mismatch numbers when useful. Do not rewrite the whole page because one region is wrong.
 7. **VERIFY** — run visual QA again after the final change. If interactive controls are present, run the built-in low-risk interaction checks too.
@@ -32,7 +32,13 @@ Run:
 npm run qa -- --reference path/to/reference.png --url http://127.0.0.1:3000/ --output qa
 ```
 
-The reference and actual capture must have exactly the same width and height. A dimension mismatch is a FAIL; never resize the reference to hide it. The runner fixes Chromium, viewport, device scale factor, font/image readiness, and motion state. It writes `qa/actual.png`, `qa/diff.png`, `qa/overlay.png`, `qa/mask.png`, and `qa/report.json`.
+Use `--capture-mode viewport` (the default) for a one-screen reference, or `--capture-mode fullPage` with `--width` and `--height` set to the browser viewport for a long reference:
+
+```powershell
+npm run qa -- --capture-mode fullPage --reference path/to/long-reference.png --url http://127.0.0.1:3000/ --width 1920 --height 1080 --output qa
+```
+
+The reference and actual capture must have exactly the same width and height. A dimension mismatch is a FAIL; never resize the reference to hide it. In `fullPage` mode, the page still renders in the configured viewport and only the screenshot extends to the document height. The runner records reference, viewport, document, actual screenshot dimensions, and `captureMode`. It writes `qa/actual.png`, `qa/diff.png`, `qa/overlay.png`, `qa/mask.png`, and `qa/report.json`.
 
 `report.json` is evidence, not an opinion. It contains dimensions, mismatch pixel count/ratio, largest regions, DOM overlap hints, the tolerance decision and observed threshold values, status, and human-readable failure reasons. Matching dimensions are mandatory; a small mismatch ratio can PASS only when no meaningful/large region exceeds the per-region tolerance. Treat antialiasing noise as low-value only when the artifacts and numbers support that conclusion; do not self-declare PASS.
 

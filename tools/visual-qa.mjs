@@ -114,6 +114,8 @@ async function waitForStablePage(page) {
 async function collectDomBoxes(page) {
   return page.evaluate(() => [...document.querySelectorAll('body *')].map((element) => {
     const rect = element.getBoundingClientRect();
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
     const style = getComputedStyle(element);
     if (!rect.width || !rect.height || style.visibility === 'hidden' || style.display === 'none') return null;
     return {
@@ -122,9 +124,16 @@ async function collectDomBoxes(page) {
       className: typeof element.className === 'string' ? element.className.slice(0, 120) : null,
       role: element.getAttribute('role'),
       text: (element.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 80),
-      x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height)
+      x: Math.round(rect.x + scrollX), y: Math.round(rect.y + scrollY), width: Math.round(rect.width), height: Math.round(rect.height)
     };
   }).filter(Boolean));
+}
+
+async function collectDocumentDimensions(page) {
+  return page.evaluate(() => ({
+    width: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth || 0, document.documentElement.clientWidth),
+    height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0, document.documentElement.clientHeight)
+  }));
 }
 
 async function readInteractionState(locator) {
@@ -223,6 +232,9 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const outputDir = path.resolve(args.output || 'qa');
   const url = fileUrl(requireArg(args, 'url'));
+  const captureMode = String(args['capture-mode'] || 'viewport');
+  if (!['viewport', 'fullPage'].includes(captureMode)) throw new Error(`Unsupported --capture-mode "${captureMode}". Use viewport or fullPage.`);
+  const fullPage = captureMode === 'fullPage';
   ensureDir(outputDir);
   const browser = await chromium.launch({ headless: true });
   try {
@@ -233,8 +245,9 @@ async function main() {
     await page.goto(url, { waitUntil: 'load' });
     await waitForStablePage(page);
     const domBoxes = await collectDomBoxes(page);
+    const documentDimensions = await collectDocumentDimensions(page);
     const actualPath = path.join(outputDir, 'actual.png');
-    await page.screenshot({ path: actualPath, fullPage: false, animations: 'disabled' });
+    await page.screenshot({ path: actualPath, fullPage, animations: 'disabled' });
     if (args['capture-only']) {
       await context.close();
       return;
@@ -285,7 +298,10 @@ async function main() {
     const meaningfulRegions = regionStats.filter((region) => region.meaningful);
     const largeRegions = meaningfulRegions.filter((region) => region.pixelRatio > maxRegionPixelRatio || region.areaRatio > maxRegionAreaRatio);
     const failureReasons = [];
-    if (!dimensionMatch) failureReasons.push(`Viewport/capture dimensions differ: reference ${reference.width}x${reference.height}, actual ${actual.width}x${actual.height}.`);
+    if (!dimensionMatch) {
+      const captureLabel = fullPage ? 'Full-page capture/reference dimensions' : 'Viewport capture/reference dimensions';
+      failureReasons.push(`${captureLabel} differ: reference ${reference.width}x${reference.height}, actual ${actual.width}x${actual.height}. Document reported ${documentDimensions.width}x${documentDimensions.height}.`);
+    }
     if (dimensionMatch && mismatchPixels / totalPixels > maxMismatchRatio) failureReasons.push(`Mismatch ratio ${(mismatchPixels / totalPixels * 100).toFixed(3)}% exceeds the ${maxMismatchRatio * 100}% tolerance.`);
     if (dimensionMatch && largeRegions.length > 0) failureReasons.push(`${largeRegions.length} large mismatch region(s) exceed the per-region tolerance; inspect the largest region before completion.`);
     const visualStatus = dimensionMatch && failureReasons.length === 0 ? 'PASS' : 'FAIL';
@@ -299,8 +315,8 @@ async function main() {
       await interactionPage.close();
     }
     const report = {
-      generatedAt: new Date().toISOString(), reference: { path: referencePath, width: reference.width, height: reference.height }, actual: { path: actualPath, width: actual.width, height: actual.height },
-      viewport: { width, height, deviceScaleFactor: 1, browser: 'chromium' }, mismatchPixelCount: mismatchPixels, mismatchRatio: dimensionMatch ? mismatchPixels / totalPixels : 1,
+      generatedAt: new Date().toISOString(), captureMode, reference: { path: referencePath, width: reference.width, height: reference.height }, actual: { path: actualPath, width: actual.width, height: actual.height },
+      viewport: { width, height, deviceScaleFactor: 1, browser: 'chromium' }, document: documentDimensions, mismatchPixelCount: mismatchPixels, mismatchRatio: dimensionMatch ? mismatchPixels / totalPixels : 1,
       majorMismatchRegions: regionStats, visualDecision: {
         status: visualStatus,
         rule: 'PASS requires matching dimensions, mismatch ratio within tolerance, and no large meaningful mismatch region.',
