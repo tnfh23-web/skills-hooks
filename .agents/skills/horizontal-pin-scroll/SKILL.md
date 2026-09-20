@@ -51,7 +51,7 @@ DOM 순서가 읽기 순서와 같아야 하며 offscreen 콘텐츠가 focus tra
 
 ## 검증 계약
 
-0/0.25/0.5/0.75/1에서 track progress, meaningful state, document overflow, final pin release, reduced motion을 검사한다.
+`verification.viewportSelector`, `pinSelector`, `trackSelector`, `mobileFallbackSelector`, `stateAttribute`, `expectedStates`를 plan에 기록한다. Motion QA는 0/0.25/0.5/0.75/1에서 실제 track 이동이 `track.scrollWidth - viewport.clientWidth`와 맞는지, meaningful state, document overflow, final pin release, mobile fallback, reduced motion을 검사한다.
 
 ## 완료 체크리스트
 

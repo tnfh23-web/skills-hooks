@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dropdown and menu contracts</title>
+<style>body{font:16px Arial,sans-serif;margin:2rem}.menu-panel{padding:1rem;border:1px solid #999;background:#fff}.menu-panel[hidden]{display:none}</style>
+</head>
+<body>
+  <section id="dropdown-root" data-interaction-recipe="dropdown">
+    <button id="dropdown-control" aria-expanded="false" aria-controls="dropdown-panel">Dropdown</button>
+    <div id="dropdown-panel" class="menu-panel" hidden>Dropdown content</div>
+  </section>
+  <section id="menu-root" data-interaction-recipe="menu-state">
+    <button id="menu-control" aria-expanded="false" aria-controls="menu-panel">Menu</button>
+    <nav id="menu-panel" class="menu-panel" hidden aria-label="Menu"><a href="#one">One</a></nav>
+  </section>
+  <button id="outside">Outside</button>
+<script>
+const setup=(control,panel,root)=>{
+  const close=()=>{control.setAttribute('aria-expanded','false');panel.hidden=true};
+  const open=()=>{const isOpen=control.getAttribute('aria-expanded')==='true';control.setAttribute('aria-expanded',String(!isOpen));panel.hidden=isOpen};
+  control.addEventListener('click',open);
+  root.addEventListener('click',(event)=>{if(!root.contains(event.target))close()});
+  document.addEventListener('keydown',(event)=>{if(event.key==='Escape')close()});
+  document.addEventListener('click',(event)=>{if(!root.contains(event.target))close()});
+};
+setup(document.querySelector('#dropdown-control'),document.querySelector('#dropdown-panel'),document.querySelector('#dropdown-root'));
+setup(document.querySelector('#menu-control'),document.querySelector('#menu-panel'),document.querySelector('#menu-root'));
+</script>
+</body></html>

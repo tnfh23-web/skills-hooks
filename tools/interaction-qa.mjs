@@ -57,6 +57,13 @@ async function snapshot(page, candidate) {
       const panel = globalOrRoot(selector);
       state.drawer = { expanded: control?.getAttribute('aria-expanded') === 'true', panelVisible: visible(panel), activeElement: document.activeElement?.id || document.activeElement?.tagName?.toLowerCase() || null, focusInsidePanel: Boolean(panel?.contains(document.activeElement)) };
     }
+    if (['dropdown', 'menu-state'].includes(candidate.semanticType)) {
+      const control = globalOrRoot(candidate.verification?.controlSelector) || (root.matches('[aria-expanded]') ? root : root.querySelector('[aria-expanded]'));
+      const panel = globalOrRoot(candidate.verification?.panelSelector || (control?.getAttribute('aria-controls') ? `#${CSS.escape(control.getAttribute('aria-controls'))}` : null));
+      const expanded = control?.getAttribute('aria-expanded');
+      const toggle = { controlExists: Boolean(control), panelExists: Boolean(panel), expanded: expanded === null ? null : expanded === 'true', panelVisible: visible(panel), className: root.className || '', active: root.matches('.active, [data-active="true"]') || Boolean(root.querySelector('.active, [data-active="true"]')) };
+      state[candidate.semanticType === 'dropdown' ? 'dropdown' : 'menuState'] = toggle;
+    }
     if (candidate.semanticType === 'carousel') {
       const slides = [...root.querySelectorAll('[data-slide], .slide, [role="group"]')];
       const active = slides.map((slide, index) => ({ index, active: slide.dataset.active === 'true' || slide.classList.contains('active') || slide.getAttribute('aria-hidden') === 'false' || slide.getAttribute('aria-current') === 'true', visible: visible(slide) }));
@@ -103,6 +110,11 @@ function tabValid(state) {
 
 function accordionValid(state) {
   return Boolean(state?.accordion) && state.accordion.expanded === state.accordion.panelVisible;
+}
+
+function toggleValid(state) {
+  const value = state?.dropdown || state?.menuState;
+  return Boolean(value?.controlExists && value.panelExists && value.expanded !== null && value.expanded === value.panelVisible);
 }
 
 function carouselValid(state) {
@@ -172,6 +184,25 @@ async function verifyCandidate(page, candidate) {
     let pass = false; let reason = 'State did not satisfy its semantic contract after activation.';
     if (candidate.semanticType === 'tabs') pass = tabValid(before) && tabValid(after) && JSON.stringify(before.tabs) !== JSON.stringify(after.tabs);
     else if (candidate.semanticType === 'accordion') pass = accordionValid(after) && before.accordion.expanded !== after.accordion.expanded;
+    else if (['dropdown', 'menu-state'].includes(candidate.semanticType)) {
+      const key = candidate.semanticType === 'dropdown' ? 'dropdown' : 'menuState';
+      const initial = before[key]; const opened = after[key];
+      const initialExpected = candidate.verification?.initialOpen;
+      const initialValid = toggleValid(before) && (initialExpected === undefined || initial.expanded === Boolean(initialExpected));
+      const openedValid = toggleValid(after) && opened.expanded === true && opened.panelVisible === true;
+      let dismissed = false; let dismissState = null; const behavior = candidate.verification?.dismissBehavior || [];
+      for (const action of behavior) {
+        if (action === 'escape') await page.keyboard.press('Escape');
+        else if (action === 'outside') await page.mouse.click(2, 2);
+        else if (action === 'selector' && candidate.verification.dismissSelector) await page.locator(candidate.verification.dismissSelector).first().click({ timeout: 3000 });
+        await waitFrame(page); dismissState = await snapshot(page, candidate); const value = dismissState[key];
+        dismissed = toggleValid(dismissState) && value.expanded === false && value.panelVisible === false;
+        if (dismissed) break;
+      }
+      pass = initialValid && openedValid && dismissed;
+      reason = !initialValid ? 'Dropdown/menu initial control and panel state are not synchronized.' : !openedValid ? 'Dropdown/menu control opened without a visible synchronized panel.' : !dismissed ? 'Dropdown/menu dismiss behavior did not close the panel.' : reason;
+      return { candidateId: candidate.id, control: candidate.selector, type: candidate.semanticType, recipe: candidate.recipe, routing, status: pass ? 'PASS' : 'FAIL', before, after, dismissState, evidence: { initialValid, openedValid, dismissed, dismissBehavior: behavior }, failureReason: pass ? null : reason };
+    }
     else if (candidate.semanticType === 'drawer') {
       const opened = after.drawer?.expanded === true && after.drawer?.panelVisible === true;
       const focusValid = !candidate.verification?.focusInside || after.drawer?.focusInsidePanel === true;

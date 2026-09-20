@@ -44,6 +44,15 @@ export function validateInteractionPlan(plan) {
     if (!candidate?.responsiveBehavior) errors.push(`${at}.responsiveBehavior is required`);
     if (!candidate?.reducedMotionBehavior) errors.push(`${at}.reducedMotionBehavior is required`);
     if (!candidate?.verification || typeof candidate.verification !== 'object') errors.push(`${at}.verification is required`);
+    const verificationSchema = PATTERN_REGISTRY[candidate?.recipe]?.verification;
+    if (verificationSchema && candidate?.verification && typeof candidate.verification === 'object') {
+      for (const field of verificationSchema.requiredFields) {
+        const value = candidate.verification[field];
+        const missing = value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0);
+        if (missing) errors.push(`${at}.verification.${field} is required for ${candidate.recipe}`);
+      }
+      if (Array.isArray(candidate.verification.expectedStates) && JSON.stringify(candidate.verification.expectedStates) !== JSON.stringify(PATTERN_REGISTRY[candidate.recipe].requiredStates)) errors.push(`${at}.verification.expectedStates must match the pattern registry for ${candidate.recipe}`);
+    }
     if (plan.designMode === 'reference' && candidate?.confidence === 'low' && candidate?.implementation !== 'skip') {
       errors.push(`${at} is LOW confidence in REFERENCE_MODE and must use implementation "skip"`);
     }
@@ -78,12 +87,29 @@ export async function discoverInteractionPlan(page, { designMode = 'reference', 
       if (seen.has(key)) return; seen.add(key);
       found.push({ selector, semanticType, recipe, evidence, confidence, verification, provenance });
     };
+    const annotatedMotionVerification = (root, recipe) => {
+      const selectorOr = (selector, fallback = root) => { const node = root.querySelector(selector); return node ? selectorFor(node) : selectorFor(fallback); };
+      const states = (fallback) => (root.getAttribute('data-expected-states') || fallback.join(',')).split(',').map((state) => state.trim()).filter(Boolean);
+      const stateAttribute = root.getAttribute('data-state-attribute') || 'data-state';
+      if (recipe === 'pin-scrub-track') return { sampleSelector: selectorOr('[data-motion-sample], [data-pin-sample], [data-state]'), pinSelector: selectorOr('[data-pin], [data-pin-sample], [data-state]'), stateAttribute, expectedStates: states(['start', 'intermediate', 'final', 'pin-released']) };
+      if (recipe === 'scene-transition') return { sampleSelector: selectorOr('[data-motion-sample], [data-scene-sample], [data-state]'), sceneSelector: root.getAttribute('data-scene-selector') || '[data-scene]', activeSelector: root.getAttribute('data-active-selector') || '[data-scene].active', stateAttribute, expectedStates: states(['previous-scene', 'active-scene', 'next-scene', 'final-safe-state']) };
+      if (recipe === 'split-text-reveal') return { sampleSelector: selectorOr('[data-motion-sample], [data-split-sample], [data-state]'), accessibleSelector: selectorOr('[data-accessible-text], .sr-only, [aria-label]'), splitSelector: root.getAttribute('data-split-selector') || '[data-split], [data-split-word], [data-split-line]', stateAttribute, expectedStates: states(['unsplit-accessible-text', 'split-ready', 'revealed', 'reduced-motion']) };
+      if (recipe === 'horizontal-pin-scroll') return { sampleSelector: selectorOr('[data-motion-sample], [data-horizontal-track], [data-state]'), viewportSelector: root.getAttribute('data-viewport-selector') || '[data-horizontal-viewport], [data-viewport]', pinSelector: root.getAttribute('data-pin-selector') || '[data-horizontal-pin], [data-pin]', trackSelector: root.getAttribute('data-track-selector') || '[data-horizontal-track], [data-track]', stateAttribute, expectedStates: states(['start', 'track-progress', 'end', 'pin-released']), mobileFallbackSelector: root.getAttribute('data-mobile-fallback-selector') || '[data-mobile-fallback]' };
+      return {};
+    };
     document.querySelectorAll('[role="tablist"]').forEach((root) => {
       const tabs = [...root.querySelectorAll('[role="tab"]')];
       if (tabs.length > 1 && tabs.some((tab) => tab.hasAttribute('aria-controls'))) add(root, 'tabs', 'tabs', [`${tabs.length} role=tab controls with panel references`]);
     });
     document.querySelectorAll('details').forEach((root) => root.querySelector('summary') && add(root, 'accordion', 'accordion', ['native details/summary affordance']));
+    for (const recipe of ['dropdown', 'menu-state']) document.querySelectorAll(`[data-interaction-recipe="${recipe}"]`).forEach((root) => {
+      const control = root.matches('[aria-expanded]') ? root : root.querySelector('[aria-expanded], button, [role="button"]');
+      const panelId = control?.getAttribute('aria-controls');
+      const panel = panelId ? document.getElementById(panelId) : root.querySelector('[data-menu-panel], [role="menu"], [role="listbox"], .menu-panel, .dropdown-panel');
+      if (control && panel) add(root, recipe, recipe, [`explicit data-interaction-recipe=${recipe}`, 'control and panel selectors are explicit'], 'high', { controlSelector: selectorFor(control), panelSelector: selectorFor(panel), dismissBehavior: ['escape'] }, 'source-annotation');
+    });
     document.querySelectorAll('[aria-expanded][aria-controls]').forEach((control) => {
+      if (control.closest('[data-interaction-recipe="dropdown"], [data-interaction-recipe="menu-state"]')) return;
       const target = document.getElementById(control.getAttribute('aria-controls'));
       const drawerLike = target && (target.matches('[role="dialog"], [data-drawer], .drawer, nav') || /drawer/i.test(`${control.getAttribute('aria-label')} ${target.className}`));
       if (drawerLike) add(control.closest('[data-interaction-root]') || control.parentElement || control, 'drawer', 'drawer', ['aria-expanded control references a drawer/menu target'], 'high', { controlSelector: selectorFor(control), panelSelector: selectorFor(target), closeOnEscape: true });
@@ -115,10 +141,10 @@ export async function discoverInteractionPlan(page, { designMode = 'reference', 
       ['[data-parallax]', 'parallax', 'parallax'],
       ['[data-pointer-reactive]', 'pointer-reactive', 'pointer-reactive']
     ];
-    motionAnnotations.forEach(([selector, semanticType, recipe]) => document.querySelectorAll(selector).forEach((root) => add(root, semanticType, recipe, [`explicit ${recipe} source annotation`], 'high', {}, 'source-annotation')));
+    motionAnnotations.forEach(([selector, semanticType, recipe]) => document.querySelectorAll(selector).forEach((root) => add(root, semanticType, recipe, [`explicit ${recipe} source annotation`], 'high', annotatedMotionVerification(root, recipe), 'source-annotation')));
     document.querySelectorAll('[data-motion-recipe]').forEach((root) => {
       const recipe = root.getAttribute('data-motion-recipe');
-      add(root, root.getAttribute('data-semantic-type') || recipe, recipe, [`explicit data-motion-recipe=${recipe}`], 'high', {}, 'source-annotation');
+      add(root, root.getAttribute('data-semantic-type') || recipe, recipe, [`explicit data-motion-recipe=${recipe}`], 'high', annotatedMotionVerification(root, recipe), 'source-annotation');
     });
     return found;
   });

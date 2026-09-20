@@ -1,0 +1,4 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Broken menu contract</title><style>body{font:16px Arial;margin:2rem}.panel{display:none;padding:1rem}</style></head>
+<body><section id="menu-root"><button id="menu-control" aria-expanded="false" aria-controls="menu-panel">Menu</button><div id="menu-panel" class="panel">Never visible</div></section>
+<script>document.querySelector('#menu-control').onclick=()=>document.querySelector('#menu-root').classList.toggle('active');</script></body></html>

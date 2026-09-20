@@ -28,13 +28,23 @@ assert.equal(validateInteractionPlan(plan([{ ...valid.candidates[0], selector: '
 assert.equal(validateInteractionPlan(plan([{ ...valid.candidates[0], confidence: 'certain' }])).valid, false, 'unknown confidence must fail');
 assert.equal(validateInteractionPlan(plan([{ ...valid.candidates[0], recipe: 'unknown-effect' }])).valid, false, 'unknown recipe must fail');
 assert.equal(validateInteractionPlan(plan([{ ...valid.candidates[0], confidence: 'low', implementation: 'required' }])).valid, false, 'REFERENCE_MODE low-confidence invention must fail');
+const dedicatedWithoutContract = candidate('scene', '#story', 'scene-transition', 'scene-transition');
+assert.equal(validateInteractionPlan(plan([dedicatedWithoutContract])).valid, false, 'dedicated recipes require their verification contract');
+const dedicatedWithWrongStates = candidate('scene', '#story', 'scene-transition', 'scene-transition', { sampleSelector: '#story-sample', sceneSelector: '[data-scene]', activeSelector: '[data-scene].active', stateAttribute: 'data-state', expectedStates: ['start', 'active', 'final', 'released'] });
+assert.equal(validateInteractionPlan(plan([dedicatedWithWrongStates])).valid, false, 'dedicated expectedStates must match the registry');
 
 const browser = await chromium.launch({ headless: true });
 try {
   const context = await browser.newContext({ viewport: { width: 1000, height: 800 } });
   const page = await context.newPage(); await page.goto(fileUrl(fixture('interaction-motion.html')), { waitUntil: 'load' });
   const discovered = await discoverInteractionPlan(page, { designMode: 'reference', sourceRoot: root });
-  for (const type of ['tabs', 'accordion', 'drawer', 'carousel', 'hover', 'marquee', 'scroll-story']) assert.ok(discovered.candidates.some((item) => item.semanticType === type), `discovery should find ${type}`);
+  for (const type of ['tabs', 'accordion', 'drawer', 'carousel', 'hover', 'marquee', 'scroll-story', 'dropdown', 'menu-state']) assert.ok(discovered.candidates.some((item) => item.semanticType === type), `discovery should find ${type}`);
+  assert.equal(validateInteractionPlan(discovered).valid, true, 'discovered dropdown/menu-state contracts must validate');
+  const annotated = await context.newPage();
+  await annotated.setContent('<main><section id="pin" data-motion-recipe="pin-scrub-track"><div data-motion-sample data-state="start"></div><div data-pin></div></section><section id="scene" data-motion-recipe="scene-transition"><div data-motion-sample data-state="previous-scene"></div><div data-scene class="active"></div></section><section id="split" data-motion-recipe="split-text-reveal"><span class="sr-only" data-accessible-text>Text</span><span data-split>Text</span></section><section id="horizontal" data-motion-recipe="horizontal-pin-scroll"><div data-horizontal-viewport><div data-horizontal-pin><div data-horizontal-track data-state="start"></div></div></div><div data-mobile-fallback></div></section></main>');
+  const annotatedPlan = await discoverInteractionPlan(annotated, { designMode: 'reference', sourceRoot: root });
+  assert.equal(validateInteractionPlan(annotatedPlan).valid, true, 'dedicated source annotations must emit a complete verification contract');
+  await annotated.close();
 
   const decorative = await context.newPage(); await decorative.setContent('<main><div class="ornament">decorative circle</div></main>');
   const emptyDiscovery = await discoverInteractionPlan(decorative, { designMode: 'reference', sourceRoot: root });
@@ -45,12 +55,16 @@ try {
     candidate('accordion', '#accordion', 'accordion', 'accordion', { controlSelector: '#accordion-toggle', panelSelector: '#accordion-panel' }),
     candidate('drawer', '#drawer-shell', 'drawer', 'drawer', { controlSelector: '#drawer-toggle', panelSelector: '#drawer-panel', closeOnEscape: true, closeOnOutside: true, focusInside: true }),
     candidate('carousel', '#carousel', 'carousel', 'carousel-state'),
-    candidate('hover', '#hover-card', 'hover', 'hover-reveal', { stateSelector: '#hover-card', essentialSelector: '.hover-meta', reversible: true })
+    candidate('hover', '#hover-card', 'hover', 'hover-reveal', { stateSelector: '#hover-card', essentialSelector: '.hover-meta', reversible: true }),
+    candidate('dropdown', '#dropdown-root', 'dropdown', 'dropdown', { controlSelector: '#dropdown-control', panelSelector: '#dropdown-panel', dismissBehavior: ['escape'] }),
+    candidate('menu-state', '#menu-root', 'menu-state', 'menu-state', { controlSelector: '#menu-control', panelSelector: '#menu-panel', dismissBehavior: ['outside'] })
   ]);
   const interaction = await runInteractionQa({ page, output: path.join(out, 'interaction.json'), plan: interactionPlan, sourceRoot: root });
   assert.equal(interaction.status, 'PASS');
-  for (const id of ['tabs', 'accordion', 'drawer', 'carousel', 'hover']) assert.equal(interaction.checks.find((item) => item.candidateId === id)?.status, 'PASS', `${id} semantic contract should pass`);
+  for (const id of ['tabs', 'accordion', 'drawer', 'carousel', 'hover', 'dropdown', 'menu-state']) assert.equal(interaction.checks.find((item) => item.candidateId === id)?.status, 'PASS', `${id} semantic contract should pass`);
   assert.equal(interaction.checks.find((item) => item.candidateId === 'drawer').evidence.outsideClosed, true);
+  assert.equal(interaction.checks.find((item) => item.candidateId === 'dropdown').evidence.dismissed, true);
+  assert.equal(interaction.checks.find((item) => item.candidateId === 'menu-state').evidence.dismissed, true);
   assert.equal(interaction.mobileChecks.find((item) => item.candidateId === 'hover').status, 'PASS');
   await context.close();
 
@@ -64,6 +78,9 @@ try {
   assert.match((await expectInteractionFailure('carousel-stale-slide.html', carouselPlan(), 'stale slide must fail')).failureReasons[0], /did not change/i);
   assert.match((await expectInteractionFailure('broken-carousel.html', carouselPlan('button'), 'dummy marker must fail')).failureReasons[0], /did not change/i);
   assert.match((await expectInteractionFailure('tabs-split-state.html', plan([candidate('tabs', '#tabs', 'tabs', 'tabs')]), 'split tab/panel state must fail')).failureReasons[0], /semantic contract/i);
+  const dropdownPlan = (recipe, rootSelector, controlSelector, panelSelector) => plan([candidate(recipe, rootSelector, recipe, recipe, { controlSelector, panelSelector, dismissBehavior: ['escape'] })]);
+  assert.match((await expectInteractionFailure('dropdown-unsynced.html', dropdownPlan('dropdown', '#dropdown-root', '#dropdown-control', '#dropdown-panel'), 'unsynchronized dropdown must fail')).failureReasons[0], /visible synchronized panel|dismiss/i);
+  assert.match((await expectInteractionFailure('menu-state-unsynced.html', dropdownPlan('menu-state', '#menu-root', '#menu-control', '#menu-panel'), 'unsynchronized menu must fail')).failureReasons[0], /synchronized panel|dismiss/i);
 
   const staticContext = await browser.newContext({ viewport: { width: 800, height: 600 } }); const staticPage = await staticContext.newPage(); await staticPage.setContent('<main><h1>Static page</h1></main>');
   const staticReport = await runInteractionQa({ page: staticPage, output: path.join(out, 'static.json'), plan: plan([]), sourceRoot: root });
@@ -71,7 +88,7 @@ try {
 
   const routedContext = await browser.newContext({ viewport: { width: 1000, height: 800 } }); const routedPage = await routedContext.newPage(); await routedPage.goto(fileUrl(fixture('interaction-motion.html')), { waitUntil: 'load' });
   const routedPlan = plan([
-    candidate('scene', '#story', 'scene-transition', 'scene-transition'),
+    candidate('scene', '#story', 'scene-transition', 'scene-transition', { sampleSelector: '#story-sample', sceneSelector: '[data-scene]', activeSelector: '[data-scene].active', stateAttribute: 'data-state', expectedStates: PATTERN_REGISTRY['scene-transition'].requiredStates }),
     candidate('reveal', '#story', 'scroll-reveal', 'scroll-reveal'),
     candidate('advanced', '#story', 'canvas-interaction', 'canvas-interaction')
   ]);
@@ -92,7 +109,6 @@ try {
 const motionPlan = plan([
   candidate('marquee', '#marquee', 'marquee', 'marquee', { trackSelector: '[data-marquee-track]', originalSelector: '[data-marquee-original]', duplicateSelector: '[data-marquee-copy]' }),
   candidate('story', '#story', 'scroll-story', 'scroll-story', { sampleSelector: '#story-sample', progressAttribute: 'data-progress', essentialSelector: '#story-sample' }),
-  candidate('scene', '#story', 'scene-transition', 'scene-transition', { sampleSelector: '#story-sample', progressAttribute: 'data-progress', essentialSelector: '#story-sample' }),
   candidate('reveal', '#story', 'scroll-reveal', 'scroll-reveal', { sampleSelector: '#story-sample', progressAttribute: 'data-progress', essentialSelector: '#story-sample' })
 ]);
 const motionPlanPath = path.join(out, 'motion-plan.json'); fs.writeFileSync(motionPlanPath, `${JSON.stringify(motionPlan, null, 2)}\n`);
@@ -102,8 +118,45 @@ assert.equal(motion.checks.find((item) => item.candidateId === 'marquee').reduce
 assert.equal(motion.checks.find((item) => item.candidateId === 'story').samples.length, 5);
 assert.equal(motion.checks.find((item) => item.candidateId === 'story').runtimeErrors.length, 0);
 assert.equal(motion.checks.find((item) => item.candidateId === 'story').reducedMotion.safe, true);
-assert.equal(motion.checks.find((item) => item.candidateId === 'scene').status, 'PASS');
 assert.equal(motion.checks.find((item) => item.candidateId === 'reveal').status, 'PASS');
+
+const dedicatedVerification = {
+  pin: { sampleSelector: '#pin-sample', pinSelector: '#pin-sample', stateAttribute: 'data-state', expectedStates: PATTERN_REGISTRY['pin-scrub-track'].requiredStates, essentialSelector: '#pin-sample' },
+  scene: { sampleSelector: '#scene-sample', sceneSelector: '[data-scene]', activeSelector: '[data-scene].active', stateAttribute: 'data-state', expectedStates: PATTERN_REGISTRY['scene-transition'].requiredStates, essentialSelector: '#scene-sample' },
+  split: { sampleSelector: '#split-sample', accessibleSelector: '#split-original', splitSelector: '#split-visual span', stateAttribute: 'data-state', expectedStates: PATTERN_REGISTRY['split-text-reveal'].requiredStates, essentialSelector: '#split-visual' },
+  horizontal: { sampleSelector: '#horizontal-track', viewportSelector: '#horizontal-viewport', pinSelector: '#horizontal-pin', trackSelector: '#horizontal-track', stateAttribute: 'data-state', expectedStates: PATTERN_REGISTRY['horizontal-pin-scroll'].requiredStates, mobileFallbackSelector: '#horizontal-mobile-fallback', essentialSelector: '#horizontal-track' }
+};
+const dedicatedPlan = plan([
+  candidate('pin', '#pin-root', 'pin-scrub', 'pin-scrub-track', dedicatedVerification.pin),
+  candidate('scene', '#scene-root', 'scene-transition', 'scene-transition', dedicatedVerification.scene),
+  candidate('split', '#split-root', 'split-text-reveal', 'split-text-reveal', dedicatedVerification.split),
+  candidate('horizontal', '#horizontal-root', 'horizontal-pin-scroll', 'horizontal-pin-scroll', dedicatedVerification.horizontal)
+]);
+const dedicatedPlanPath = path.join(out, 'dedicated-plan.json'); fs.writeFileSync(dedicatedPlanPath, `${JSON.stringify(dedicatedPlan, null, 2)}\n`);
+const dedicated = await runMotionQa({ url: fixture('dedicated-motion.html'), output: path.join(out, 'dedicated.json'), planPath: dedicatedPlanPath, sourceRoot: root, width: 1000, height: 800 });
+assert.equal(dedicated.status, 'PASS', JSON.stringify(dedicated.failureReasons));
+for (const id of ['pin', 'scene', 'split', 'horizontal']) {
+  const check = dedicated.checks.find((item) => item.candidateId === id);
+  assert.equal(check.status, 'PASS', `${id} dedicated verifier should pass: ${check.failureReason}`);
+  assert.equal(check.evidence.stateCoverage.complete, true, `${id} should cover every required state`);
+  assert.equal(check.runtimeErrors.length, 0, `${id} should have no runtime errors`);
+}
+assert.equal(dedicated.checks.find((item) => item.candidateId === 'horizontal').mobile.safe, true);
+assert.equal(dedicated.checks.find((item) => item.candidateId === 'horizontal').resize.safe, true);
+
+async function expectMotionFailure(name, failedCandidate, reason) {
+  const failedPlan = plan([failedCandidate]); const failedPath = path.join(out, `${name}-plan.json`); fs.writeFileSync(failedPath, `${JSON.stringify(failedPlan, null, 2)}\n`);
+  const report = await runMotionQa({ url: fixture(name), output: path.join(out, `${name}.json`), planPath: failedPath, sourceRoot: root, width: 1000, height: 800 });
+  assert.equal(report.status, 'FAIL', reason); return report;
+}
+const failedScene = await expectMotionFailure('dedicated-scene-static.html', candidate('scene', '#scene-root', 'scene-transition', 'scene-transition', dedicatedVerification.scene), 'scene without active progression must fail');
+assert.match(failedScene.failureReasons[0], /semantic state progression|previous\/active\/next/i);
+const failedPin = await expectMotionFailure('dedicated-pin-no-release.html', candidate('pin', '#pin-root', 'pin-scrub', 'pin-scrub-track', dedicatedVerification.pin), 'pin without release must fail');
+assert.match(failedPin.failureReasons[0], /release/i);
+const failedSplit = await expectMotionFailure('dedicated-split-missing.html', candidate('split', '#split-root', 'split-text-reveal', 'split-text-reveal', dedicatedVerification.split), 'split without accessible source must fail');
+assert.match(failedSplit.failureReasons[0], /accessible|duplicate/i);
+const failedHorizontal = await expectMotionFailure('dedicated-horizontal-overflow.html', candidate('horizontal', '#horizontal-root', 'horizontal-pin-scroll', 'horizontal-pin-scroll', dedicatedVerification.horizontal), 'horizontal overflow must fail');
+assert.match(failedHorizontal.failureReasons[0], /overflow|Horizontal/i);
 
 const deferredPlanPath = path.join(out, 'deferred-plan.json');
 fs.writeFileSync(deferredPlanPath, `${JSON.stringify(plan([candidate('pointer', '#hover-card', 'pointer-reactive', 'pointer-reactive')]), null, 2)}\n`);

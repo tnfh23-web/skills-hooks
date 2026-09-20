@@ -51,7 +51,7 @@ active 상태를 의미적으로 노출하고 inactive 장면 때문에 focus가
 
 ## 검증 계약
 
-5개 sample에서 최소 세 개의 의미 있는 상태, expected state coverage, final safe state, overflow, runtime error, reduced motion을 검사한다.
+`verification.sceneSelector`, `activeSelector`, `stateAttribute`, `expectedStates`를 plan에 기록한다. Motion QA는 5개 sample에서 실제 previous→active→next active scene 전환과 final-safe-state, 한 번에 하나의 active scene, overflow, runtime error, reduced motion을 검사한다. state/active scene 증거 없이 transform만 변한 경우 PASS하지 않는다.
 
 ## 완료 체크리스트
 

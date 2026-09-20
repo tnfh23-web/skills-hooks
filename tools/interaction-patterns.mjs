@@ -6,14 +6,14 @@ export const INTERACTION_CATEGORIES = Object.freeze({
   ADVANCED: 'ADVANCED'
 });
 
-const pattern = (category, verifier, automation, layer, requiredStates) => Object.freeze({ category, verifier, automation, layer, requiredStates });
+const pattern = (category, verifier, automation, layer, requiredStates, verification = null) => Object.freeze({ category, verifier, automation, layer, requiredStates, verification });
 
 export const PATTERN_REGISTRY = Object.freeze({
   tabs: pattern('STATE_INTERACTION', 'interaction-qa', 'automatic', 'primitive', ['selected-tab', 'visible-panel']),
   accordion: pattern('STATE_INTERACTION', 'interaction-qa', 'automatic', 'primitive', ['collapsed', 'expanded', 'visible-panel']),
-  dropdown: pattern('STATE_INTERACTION', 'interaction-qa', 'automatic', 'shared-recipe', ['closed', 'open', 'dismissed']),
+  dropdown: pattern('STATE_INTERACTION', 'interaction-qa', 'automatic', 'shared-recipe', ['closed', 'open', 'dismissed'], { requiredFields: ['controlSelector', 'panelSelector', 'dismissBehavior'] }),
   drawer: pattern('STATE_INTERACTION', 'interaction-qa', 'automatic', 'shared-recipe', ['closed', 'open', 'close']),
-  'menu-state': pattern('STATE_INTERACTION', 'interaction-qa', 'automatic', 'shared-recipe', ['closed', 'open', 'dismissed']),
+  'menu-state': pattern('STATE_INTERACTION', 'interaction-qa', 'automatic', 'shared-recipe', ['closed', 'open', 'dismissed'], { requiredFields: ['controlSelector', 'panelSelector', 'dismissBehavior'] }),
   'carousel-state': pattern('STATE_INTERACTION', 'interaction-qa', 'automatic', 'dedicated-skill', ['active-slide', 'counter', 'pagination', 'progress', 'thumbnail']),
   'hover-reveal': pattern('POINTER_INTERACTION', 'interaction-qa', 'automatic', 'shared-recipe', ['rest', 'hover', 'restored', 'mobile-access']),
   'pointer-reactive': pattern('POINTER_INTERACTION', 'motion-qa', 'deferred', 'shared-recipe', ['rest', 'pointer-sample', 'restored']),
@@ -26,10 +26,10 @@ export const PATTERN_REGISTRY = Object.freeze({
   'floating-motion': pattern('CONTINUOUS_MOTION', 'motion-qa', 'deferred', 'shared-recipe', ['rest', 'loop', 'reduced-motion']),
   'scroll-reveal': pattern('SCROLL_MOTION', 'motion-qa', 'contract', 'shared-recipe', ['start', 'intermediate', 'final']),
   'scroll-header-state': pattern('SCROLL_MOTION', 'motion-qa', 'contract', 'shared-recipe', ['shown', 'hidden', 'restored']),
-  'split-text-reveal': pattern('SCROLL_MOTION', 'motion-qa', 'contract', 'dedicated-skill', ['unsplit-accessible-text', 'split-ready', 'revealed', 'reduced-motion']),
-  'pin-scrub-track': pattern('SCROLL_MOTION', 'motion-qa', 'contract', 'dedicated-skill', ['start', 'intermediate', 'final', 'pin-released']),
-  'scene-transition': pattern('SCROLL_MOTION', 'motion-qa', 'contract', 'dedicated-skill', ['previous-scene', 'active-scene', 'next-scene', 'final-safe-state']),
-  'horizontal-pin-scroll': pattern('SCROLL_MOTION', 'motion-qa', 'contract', 'dedicated-skill', ['start', 'track-progress', 'end', 'pin-released']),
+  'split-text-reveal': pattern('SCROLL_MOTION', 'motion-qa', 'contract', 'dedicated-skill', ['unsplit-accessible-text', 'split-ready', 'revealed', 'reduced-motion'], { requiredFields: ['sampleSelector', 'accessibleSelector', 'splitSelector', 'stateAttribute', 'expectedStates'], normalStates: ['unsplit-accessible-text', 'split-ready', 'revealed'], reducedState: 'reduced-motion' }),
+  'pin-scrub-track': pattern('SCROLL_MOTION', 'motion-qa', 'contract', 'dedicated-skill', ['start', 'intermediate', 'final', 'pin-released'], { requiredFields: ['sampleSelector', 'pinSelector', 'stateAttribute', 'expectedStates'], normalStates: ['start', 'intermediate', 'final', 'pin-released'] }),
+  'scene-transition': pattern('SCROLL_MOTION', 'motion-qa', 'contract', 'dedicated-skill', ['previous-scene', 'active-scene', 'next-scene', 'final-safe-state'], { requiredFields: ['sampleSelector', 'sceneSelector', 'activeSelector', 'stateAttribute', 'expectedStates'], normalStates: ['previous-scene', 'active-scene', 'next-scene', 'final-safe-state'] }),
+  'horizontal-pin-scroll': pattern('SCROLL_MOTION', 'motion-qa', 'contract', 'dedicated-skill', ['start', 'track-progress', 'end', 'pin-released'], { requiredFields: ['sampleSelector', 'viewportSelector', 'pinSelector', 'trackSelector', 'stateAttribute', 'expectedStates', 'mobileFallbackSelector'], normalStates: ['start', 'track-progress', 'end', 'pin-released'] }),
   parallax: pattern('SCROLL_MOTION', 'motion-qa', 'contract', 'shared-recipe', ['start', 'intermediate', 'final']),
   'image-sequence': pattern('SCROLL_MOTION', 'motion-qa', 'contract', 'shared-recipe', ['first-frame', 'intermediate-frame', 'last-frame']),
   'scroll-story': pattern('SCROLL_MOTION', 'motion-qa', 'contract', 'shared-recipe', ['start', 'intermediate', 'final']),
@@ -50,6 +50,9 @@ export function assertPatternRegistry() {
     if (!['interaction-qa', 'motion-qa', 'manual'].includes(entry.verifier)) errors.push(`${recipe}: invalid verifier`);
     if (!['automatic', 'contract', 'deferred', 'unsupported'].includes(entry.automation)) errors.push(`${recipe}: invalid automation`);
     if (!Array.isArray(entry.requiredStates) || entry.requiredStates.length === 0) errors.push(`${recipe}: requiredStates missing`);
+    if (entry.verification && (!Array.isArray(entry.verification.requiredFields) || entry.verification.requiredFields.length === 0)) errors.push(`${recipe}: verification.requiredFields missing`);
+    if (entry.verification?.normalStates && entry.verification.normalStates.some((state) => !entry.requiredStates.includes(state))) errors.push(`${recipe}: verification.normalStates must be registry states`);
+    if (entry.verification?.reducedState && !entry.requiredStates.includes(entry.verification.reducedState)) errors.push(`${recipe}: verification.reducedState must be a registry state`);
   }
   return { valid: errors.length === 0, errors };
 }

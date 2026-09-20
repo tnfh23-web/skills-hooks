@@ -51,7 +51,7 @@ scrub을 멈추고 핵심 콘텐츠가 보이는 안정 상태를 제공한다.
 
 ## 검증 계약
 
-0/0.25/0.5/0.75/1 sample, meaningful progression, runtime error, overflow, final visibility, pin release, reduced motion을 검사한다. 계약이 없으면 `DEFERRED`다.
+`verification.expectedStates`는 registry의 `start/intermediate/final/pin-released`와 일치해야 한다. Motion QA는 trigger 도달 후 0/0.25/0.5/0.75/1 sample에서 semantic state coverage, meaningful progression, runtime error, overflow, final visibility, 실제 pin release, reduced motion을 검사한다. transform 변화만으로 PASS하지 않으며 계약이 없으면 `DEFERRED`다.
 
 ## 완료 체크리스트
 

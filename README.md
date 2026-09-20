@@ -31,7 +31,7 @@ npm run qa:responsive -- --url http://127.0.0.1:3000/ --output qa/responsive-rep
 - `SCROLL_MOTION`: reveal, pin/scrub, scene transition, split text, horizontal pin처럼 스크롤 진행률에 결합된 패턴
 - `ADVANCED`: canvas/WebGL처럼 현재 자동 검증 범위를 벗어난 패턴
 
-상태 상호작용은 Interaction QA가 실제 상태 전이를 검사한다. 모션 후보는 클릭 폴백을 사용하지 않고 Motion QA로 이관한다. 검증 계약이 부족한 모션은 `DEFERRED`, 현재 범위 밖 패턴은 `UNSUPPORTED`로 기록하며 자동 PASS로 바꾸지 않는다. 상세 매핑은 `docs/interaction-corpus.md`에 있다.
+상태 상호작용은 Interaction QA가 실제 상태 전이를 검사한다. dropdown/menu-state는 명시된 control·panel·dismiss 계약을 사용하며 class 변화만으로 PASS하지 않는다. 모션 후보는 클릭 폴백을 사용하지 않고 Motion QA로 이관한다. `pin-scrub-track`, `scene-transition`, `split-text-reveal`, `horizontal-pin-scroll`은 각 recipe의 `verification.expectedStates`와 전용 semantic verifier를 사용하고, transform 변화만으로 PASS하지 않는다. 검증 계약이 부족한 모션은 `DEFERRED`, 현재 범위 밖 패턴은 `UNSUPPORTED`로 기록하며 자동 PASS로 바꾸지 않는다. 상세 매핑은 `docs/interaction-corpus.md`에 있다.
 
 ## 두 가지 설계 모드
 
@@ -56,7 +56,7 @@ npm run qa:responsive -- --url http://127.0.0.1:3000/ --output qa/responsive-rep
 
 - Visual QA: dimension, 실제 mismatch mask, mismatch ratio와 큰 region을 함께 판정하고 `actual.png`, `diff.png`, `overlay.png`, `mask.png`, `report.json`을 만든다.
 - Interaction QA: state candidate를 실제 클릭/hover하고 before/after semantic state와 carousel projection 동기화를 검사한다.
-- Motion QA: marquee 구조와 reduced motion을 검사하고, scroll motion은 0/0.25/0.5/0.75/1 sample의 진행·최종 상태·overflow·runtime error를 검사한다.
+- Motion QA: marquee 구조와 reduced motion을 검사하고, shared scroll recipe는 0/0.25/0.5/0.75/1 sample을 사용한다. Dedicated recipe는 pin 도달/해제, active scene 전환, 접근 가능한 원문·font·responsive text, track distance/mobile fallback을 각각 확인하며 required state coverage와 runtime error를 report에 남긴다.
 - Geometry QA: 레퍼런스 좌표와 `getBoundingClientRect()`를 비교해 `dx/dy/dw/dh`를 기록한다.
 - Responsive QA: 1024×768 및 390×844에서 overflow, 잘림, 중복 instance, 숨겨진 branch animation, hover-only 핵심 정보 등을 점검한다.
 

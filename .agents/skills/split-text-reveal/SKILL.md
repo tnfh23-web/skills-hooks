@@ -51,7 +51,7 @@ font 전 측정, duplicate narration, layout shift, resize 후 stale line, mobil
 
 ## 검증 계약
 
-시작·중간·완료 sample, expected state, 최종 가시성, overflow, runtime error, reduced motion을 검사한다.
+`verification.accessibleSelector`, `splitSelector`, `stateAttribute`, `expectedStates`를 plan에 기록한다. Motion QA는 시작·중간·완료 sample, accessible original과 split text 일치, duplicate announcement 차단, font readiness, resize 후 가시성, overflow, runtime error, reduced motion을 검사한다.
 
 ## 완료 체크리스트
 
