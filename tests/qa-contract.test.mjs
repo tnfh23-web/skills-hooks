@@ -35,9 +35,9 @@ assert.equal(passReport.mismatchPixelCount, 0);
 assert.equal(passReport.captureMode, 'viewport');
 assert.equal(passReport.interactionQa.status, 'PASS');
 const interactionChecks = JSON.parse(fs.readFileSync(path.join(passDir, 'qa', 'interaction-report.json'), 'utf8')).checks;
-assert.ok(interactionChecks.some((check) => check.type === 'tab' && check.status === 'PASS'));
+assert.ok(interactionChecks.some((check) => check.type === 'tabs' && check.status === 'PASS'));
 assert.ok(interactionChecks.some((check) => check.type === 'accordion' && check.status === 'PASS'));
-assert.ok(interactionChecks.some((check) => check.type === 'aria-expanded-toggle' && check.status === 'PASS'));
+assert.ok(interactionChecks.filter((check) => check.type === 'accordion' && check.status === 'PASS').length >= 2);
 
 execFileSync(process.execPath, ['tools/visual-qa.mjs', '--url', aaFixture, '--output', path.join(aaDir, 'bootstrap'), '--capture-only'], { stdio: 'inherit' });
 const aaReference = path.join(aaDir, 'reference.png');

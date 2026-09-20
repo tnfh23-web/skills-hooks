@@ -42,6 +42,6 @@ const broken = path.join(root, 'tests', 'fixtures', 'broken-carousel.html');
 const brokenRun = runVisual(broken, 'broken-carousel'); assert.equal(brokenRun.status, 1);
 const brokenInteraction = JSON.parse(fs.readFileSync(path.join(out, 'broken-carousel', 'interaction-report.json'), 'utf8'));
 assert.equal(brokenInteraction.status, 'FAIL');
-assert.match(brokenInteraction.failureReasons[0], /no observable state change/i);
+assert.match(brokenInteraction.failureReasons[0], /active slide did not change|semantic contract/i);
 
 console.log('reference spec, deterministic measurement, geometry, typography, responsive, carousel semantics: PASS');

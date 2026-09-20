@@ -1,0 +1,176 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { chromium } from 'playwright';
+import { createSourceFingerprint } from './source-fingerprint.mjs';
+
+export const KNOWN_RECIPES = new Set([
+  'tabs', 'accordion', 'drawer', 'carousel-state', 'marquee',
+  'hover-reveal', 'scroll-reveal', 'scroll-story', 'scene-transition'
+]);
+
+const REQUIRED_STATES = {
+  tabs: ['selected-tab', 'visible-panel'],
+  accordion: ['expanded-control', 'visible-panel'],
+  drawer: ['closed', 'open', 'close'],
+  carousel: ['active-slide', 'counter', 'pagination', 'progress'],
+  marquee: ['moving-track', 'accessible-duplicate', 'reduced-motion'],
+  hover: ['rest', 'hover', 'restored'],
+  'scroll-story': ['start', 'intermediate', 'final']
+};
+
+function parseArgs(argv) {
+  const args = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    if (!argv[i].startsWith('--')) continue;
+    const key = argv[i].slice(2); const next = argv[i + 1];
+    if (!next || next.startsWith('--')) args[key] = true; else { args[key] = next; i += 1; }
+  }
+  return args;
+}
+
+const fileUrl = (value) => /^[a-z]+:\/\//i.test(value) ? value : new URL(`file://${path.resolve(value).replaceAll('\\', '/')}`).href;
+
+export function validateInteractionPlan(plan) {
+  const errors = [];
+  if (!plan || typeof plan !== 'object') return { valid: false, errors: ['plan must be an object'] };
+  if (plan.version !== 1) errors.push('version must be 1');
+  if (!['reference', 'design'].includes(plan.designMode)) errors.push('designMode must be reference or design');
+  if (!Array.isArray(plan.candidates)) errors.push('candidates must be an array');
+  if (plan.designMode === 'design' && (!plan.motionLanguage || !plan.motionLanguage.character || !plan.motionLanguage.pace)) {
+    errors.push('DESIGN_MODE requires motionLanguage.character and motionLanguage.pace');
+  }
+  const ids = new Set();
+  for (const [index, candidate] of (plan.candidates || []).entries()) {
+    const at = `candidates[${index}]`;
+    if (!candidate?.id || typeof candidate.id !== 'string') errors.push(`${at}.id is required`);
+    else if (ids.has(candidate.id)) errors.push(`${at}.id must be unique`); else ids.add(candidate.id);
+    if (!candidate?.selector || typeof candidate.selector !== 'string') errors.push(`${at}.selector is required`);
+    if (!candidate?.semanticType || typeof candidate.semanticType !== 'string') errors.push(`${at}.semanticType is required`);
+    if (!['high', 'medium', 'low'].includes(candidate?.confidence)) errors.push(`${at}.confidence must be high, medium, or low`);
+    if (!['reference-state', 'annotation', 'dom-affordance', 'design-language'].includes(candidate?.provenance)) errors.push(`${at}.provenance is invalid`);
+    if (!candidate?.recipe || !KNOWN_RECIPES.has(candidate.recipe)) errors.push(`${at}.recipe is unknown: ${candidate?.recipe || '(missing)'}`);
+    if (!Array.isArray(candidate?.evidence) || candidate.evidence.length === 0) errors.push(`${at}.evidence must contain at least one fact`);
+    if (!Array.isArray(candidate?.requiredStates)) errors.push(`${at}.requiredStates must be an array`);
+    if (!candidate?.responsiveBehavior) errors.push(`${at}.responsiveBehavior is required`);
+    if (!candidate?.reducedMotionBehavior) errors.push(`${at}.reducedMotionBehavior is required`);
+    if (!candidate?.verification || typeof candidate.verification !== 'object') errors.push(`${at}.verification is required`);
+    if (plan.designMode === 'reference' && candidate?.confidence === 'low' && candidate?.implementation !== 'skip') {
+      errors.push(`${at} is LOW confidence in REFERENCE_MODE and must use implementation "skip"`);
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+function requiredStatesFor(type) {
+  return REQUIRED_STATES[type] || ['rest', 'active'];
+}
+
+export async function discoverInteractionPlan(page, { designMode = 'reference', sourceRoot = process.cwd(), motionLanguage = null } = {}) {
+  const candidates = await page.evaluate(() => {
+    const visible = (node) => {
+      const rect = node.getBoundingClientRect(); const style = getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    };
+    const selectorFor = (node, prefix) => {
+      if (node.id) return `#${CSS.escape(node.id)}`;
+      const explicit = node.getAttribute('data-interaction-id');
+      if (explicit) return `[data-interaction-id="${CSS.escape(explicit)}"]`;
+      const className = [...node.classList].find((name) => document.querySelectorAll(`.${CSS.escape(name)}`).length === 1);
+      if (className) return `.${CSS.escape(className)}`;
+      const peers = [...node.parentElement?.children || []].filter((item) => item.tagName === node.tagName);
+      return `${prefix || node.tagName.toLowerCase()}:nth-of-type(${Math.max(1, peers.indexOf(node) + 1)})`;
+    };
+    const found = []; const seen = new Set();
+    const add = (root, semanticType, recipe, evidence, confidence = 'high', verification = {}) => {
+      if (!root || !visible(root)) return;
+      const selector = selectorFor(root, root.tagName.toLowerCase());
+      const key = `${semanticType}:${selector}`;
+      if (seen.has(key)) return; seen.add(key);
+      found.push({ selector, semanticType, recipe, evidence, confidence, verification });
+    };
+    document.querySelectorAll('[role="tablist"]').forEach((root) => {
+      const tabs = [...root.querySelectorAll('[role="tab"]')];
+      if (tabs.length > 1 && tabs.some((tab) => tab.hasAttribute('aria-controls'))) add(root, 'tabs', 'tabs', [`${tabs.length} role=tab controls with panel references`]);
+    });
+    document.querySelectorAll('details').forEach((root) => root.querySelector('summary') && add(root, 'accordion', 'accordion', ['native details/summary affordance']));
+    document.querySelectorAll('[aria-expanded][aria-controls]').forEach((control) => {
+      const target = document.getElementById(control.getAttribute('aria-controls'));
+      const drawerLike = target && (target.matches('[role="dialog"], [data-drawer], .drawer, nav') || /drawer/i.test(`${control.getAttribute('aria-label')} ${target.className}`));
+      if (drawerLike) add(control.closest('[data-interaction-root]') || control.parentElement || control, 'drawer', 'drawer', ['aria-expanded control references a drawer/menu target'], 'high', { controlSelector: selectorFor(control), panelSelector: selectorFor(target), closeOnEscape: true });
+      else if (target) add(control.closest('[data-interaction-root]') || control.parentElement || control, 'accordion', 'accordion', ['aria-expanded control references a panel'], 'high', { controlSelector: selectorFor(control), panelSelector: selectorFor(target) });
+    });
+    document.querySelectorAll('[data-carousel], [data-slider], [aria-roledescription="carousel"], .carousel').forEach((root) => {
+      const controls = root.querySelectorAll('button, [data-next], [data-prev]').length;
+      const slides = root.querySelectorAll('[data-slide], [role="group"], .slide').length;
+      if (controls && slides > 1) add(root, 'carousel', 'carousel-state', [`${slides} repeated slides`, `${controls} navigation controls`]);
+    });
+    document.querySelectorAll('[data-qa-action="next"], [data-qa-action="prev"], [data-next], [data-prev]').forEach((control) => {
+      const root = control.closest('[data-carousel], [data-slider], [aria-roledescription="carousel"], .carousel') || control;
+      add(root, 'carousel', 'carousel-state', ['explicit previous/next control marker']);
+    });
+    document.querySelectorAll('[data-marquee], .marquee').forEach((root) => {
+      const track = root.querySelector('[data-marquee-track], .marquee__track');
+      const duplicate = root.querySelector('[data-marquee-copy], [aria-hidden="true"]');
+      if (track && duplicate) add(root, 'marquee', 'marquee', ['clipped moving track with duplicate content']);
+    });
+    document.querySelectorAll('[data-hover-contract]').forEach((root) => add(root, 'hover', 'hover-reveal', ['explicit data-hover-contract annotation']));
+    document.querySelectorAll('[data-scroll-story], [data-motion-sample]').forEach((root) => add(root, 'scroll-story', 'scroll-story', ['explicit scroll/motion sampling annotation']));
+    return found;
+  });
+  const normalized = candidates.map((candidate, index) => ({
+    id: `${candidate.semanticType}-${index + 1}`,
+    selector: candidate.selector,
+    semanticType: candidate.semanticType,
+    intent: candidate.semanticType === 'carousel' ? 'navigate-media' : candidate.semanticType === 'marquee' ? 'continuous-content' : 'change-semantic-state',
+    evidence: candidate.evidence,
+    provenance: 'dom-affordance',
+    confidence: candidate.confidence,
+    implementation: candidate.confidence === 'high' ? 'required' : candidate.confidence === 'medium' ? 'conservative' : 'skip',
+    recipe: candidate.recipe,
+    requiredStates: requiredStatesFor(candidate.semanticType),
+    responsiveBehavior: candidate.semanticType === 'hover' ? 'Essential content remains visible or tap-accessible without hover.' : 'Preserve semantic state and reachable controls at mobile width.',
+    reducedMotionBehavior: ['marquee', 'scroll-story'].includes(candidate.semanticType) ? 'Stop continuous/scrub motion and expose a safe readable state.' : 'Preserve state behavior without decorative transition.',
+    verification: candidate.verification
+  }));
+  const plan = {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    designMode,
+    motionLanguage: designMode === 'design' ? (motionLanguage || { character: 'restrained', pace: 'moderate', preferredFamilies: [], bannedFamilies: ['generic-card-lift', 'all-sections-fade-up'] }) : null,
+    sourceRoot: path.resolve(sourceRoot),
+    sourceFingerprint: createSourceFingerprint(sourceRoot),
+    candidates: normalized
+  };
+  const result = validateInteractionPlan(plan);
+  if (!result.valid) throw new Error(result.errors.join('; '));
+  return plan;
+}
+
+export function readInteractionPlan(file) {
+  const plan = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const result = validateInteractionPlan(plan);
+  if (!result.valid) throw new Error(result.errors.join('; '));
+  return plan;
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.validate) {
+    const plan = JSON.parse(fs.readFileSync(path.resolve(args.validate), 'utf8'));
+    const result = validateInteractionPlan(plan); process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); process.exitCode = result.valid ? 0 : 1; return;
+  }
+  if (!args.url) throw new Error('Missing required argument --url');
+  const output = path.resolve(args.output || 'work/interaction-plan.json');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext({ viewport: { width: Number(args.width || 1440), height: Number(args.height || 900) } });
+    const page = await context.newPage(); await page.goto(fileUrl(args.url), { waitUntil: 'load' });
+    const plan = await discoverInteractionPlan(page, { designMode: args.mode || 'reference', sourceRoot: args['source-root'] || process.cwd() });
+    fs.mkdirSync(path.dirname(output), { recursive: true }); fs.writeFileSync(output, `${JSON.stringify(plan, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ output, candidateCount: plan.candidates.length, mode: plan.designMode }, null, 2)}\n`);
+    await context.close();
+  } finally { await browser.close(); }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) main().catch((error) => { console.error(error.stack || error.message); process.exitCode = 1; });

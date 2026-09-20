@@ -1,16 +1,36 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createSourceFingerprint } from '../../tools/source-fingerprint.mjs';
+import { validateInteractionPlan } from '../../tools/interaction-plan.mjs';
+import { resolveLatestRun } from '../../tools/qa-run.mjs';
 
 function emit(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
 
+function block(stopReason, systemMessage) {
+  emit({ continue: false, stopReason, systemMessage });
+  process.exit(0);
+}
+
+function assertFresh(candidateReport, label) {
+  if (!candidateReport.sourceFingerprint?.value || !candidateReport.sourceRoot) return;
+  const current = createSourceFingerprint(candidateReport.sourceRoot);
+  if (current.value !== candidateReport.sourceFingerprint.value) {
+    block(`The ${label} verification is stale.`, `Source changed after the latest ${label} verification. Run it again.`);
+  }
+}
+
 const cwd = process.cwd();
-const reportPath = path.join(cwd, 'qa', 'report.json');
-const interactionPath = path.join(cwd, 'qa', 'interaction-report.json');
-const geometryPath = path.join(cwd, 'qa', 'geometry-report.json');
-const responsivePath = path.join(cwd, 'qa', 'responsive-report.json');
+let latestRun;
+try { latestRun = resolveLatestRun(cwd); }
+catch (error) { block('The canonical QA run pointer is invalid.', error.message); }
+const qaDir = latestRun.outputDir;
+const reportPath = path.join(qaDir, 'report.json');
+const interactionPath = path.join(qaDir, 'interaction-report.json');
+const motionPath = path.join(qaDir, 'motion-report.json');
+const geometryPath = path.join(qaDir, 'geometry-report.json');
+const responsivePath = path.join(qaDir, 'responsive-report.json');
 
 if (!fs.existsSync(reportPath)) {
   emit({
@@ -34,7 +54,7 @@ try {
 }
 
 const missingArtifacts = ['actual.png', 'diff.png']
-  .map((name) => path.join(cwd, 'qa', name))
+  .map((name) => path.join(qaDir, name))
   .filter((file) => !fs.existsSync(file));
 
 if (report.status !== 'PASS' || missingArtifacts.length > 0) {
@@ -47,17 +67,7 @@ if (report.status !== 'PASS' || missingArtifacts.length > 0) {
   process.exit(0);
 }
 
-if (report.sourceFingerprint?.value && report.sourceRoot) {
-  const current = createSourceFingerprint(report.sourceRoot);
-  if (current.value !== report.sourceFingerprint.value) {
-    emit({
-      continue: false,
-      stopReason: 'The source changed after the latest visual verification.',
-      systemMessage: 'Run visual QA again after the latest source change. The PASS report is stale.'
-    });
-    process.exit(0);
-  }
-}
+assertFresh(report, 'visual');
 
 for (const gate of [
   { key: 'geometryRequired', file: geometryPath, label: 'geometry' },
@@ -80,6 +90,7 @@ for (const gate of [
   }
 }
 
+let interaction = null;
 if (report.interactionQa?.required === true) {
   if (!fs.existsSync(interactionPath)) {
     emit({
@@ -89,7 +100,6 @@ if (report.interactionQa?.required === true) {
     });
     process.exit(0);
   }
-  let interaction;
   try {
     interaction = JSON.parse(fs.readFileSync(interactionPath, 'utf8'));
   } catch (error) {
@@ -108,9 +118,36 @@ if (report.interactionQa?.required === true) {
     });
     process.exit(0);
   }
+  assertFresh(interaction, 'interaction');
+}
+
+let motion = null;
+if (report.qualityGates?.motionRequired) {
+  if (!fs.existsSync(motionPath)) block('Required motion verification has not run.', `Run motion QA and create ${motionPath} before completion.`);
+  try { motion = JSON.parse(fs.readFileSync(motionPath, 'utf8')); }
+  catch (error) { block('The motion verification report is not valid JSON.', `Fix ${motionPath} and run motion QA again. ${error.message}`); }
+  if (motion.status !== 'PASS') block('Required motion verification failed.', `Fix failed motion checks in ${motionPath}.`);
+  assertFresh(motion, 'motion');
+}
+
+if (report.qualityGates?.interactionPlanRequired) {
+  const planPath = report.interactionPlan;
+  if (!planPath || !fs.existsSync(planPath)) block('Required interaction plan is missing.', 'Create and validate work/interaction-plan.json, then rerun QA.');
+  let plan;
+  try { plan = JSON.parse(fs.readFileSync(planPath, 'utf8')); }
+  catch (error) { block('The interaction plan is not valid JSON.', error.message); }
+  const validation = validateInteractionPlan(plan);
+  if (!validation.valid) block('The interaction plan is invalid.', validation.errors.join('; '));
+  if (plan.sourceFingerprint?.value && plan.sourceRoot) {
+    const current = createSourceFingerprint(plan.sourceRoot);
+    if (current.value !== plan.sourceFingerprint.value) block('The interaction plan is stale.', 'Source changed after interaction planning. Rediscover or review the plan, then rerun QA.');
+  }
+  const evidence = new Map([...(interaction?.checks || []), ...(motion?.checks || [])].map((check) => [check.candidateId, check.status]));
+  const missing = plan.candidates.filter((candidate) => candidate.confidence === 'high' && candidate.implementation !== 'skip' && evidence.get(candidate.id) !== 'PASS');
+  if (missing.length) block('High-confidence interaction verification evidence is missing.', `Run the appropriate interaction or motion QA for: ${missing.map((candidate) => candidate.id).join(', ')}.`);
 }
 
 emit({
   continue: true,
-  systemMessage: 'Reference publishing visual and required interaction verification passed.'
+  systemMessage: `Canonical visual and required interaction/motion verification passed: ${qaDir}`
 });

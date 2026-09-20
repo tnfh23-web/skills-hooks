@@ -5,6 +5,8 @@ import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
 import { chromium } from 'playwright';
 import { createSourceFingerprint } from './source-fingerprint.mjs';
+import { runInteractionQa } from './interaction-qa.mjs';
+import { writeLatestRun } from './qa-run.mjs';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -137,115 +139,6 @@ async function collectDocumentDimensions(page) {
   }));
 }
 
-async function readInteractionState(locator) {
-  return locator.evaluate((element) => {
-    const visible = (node) => {
-      const rect = node.getBoundingClientRect();
-      const style = getComputedStyle(node);
-      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
-    };
-    const describe = (node) => {
-      if (!node) return null;
-      const rect = node.getBoundingClientRect();
-      return {
-        id: node.id || null,
-        tag: node.tagName.toLowerCase(),
-        text: (node.innerText || node.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 100),
-        ariaSelected: node.getAttribute('aria-selected'),
-        ariaExpanded: node.getAttribute('aria-expanded'),
-        ariaCurrent: node.getAttribute('aria-current'),
-        dataQaAction: node.getAttribute('data-qa-action'),
-        className: typeof node.className === 'string' ? node.className.slice(0, 160) : null,
-        hidden: Boolean(node.hidden),
-        open: 'open' in node ? Boolean(node.open) : null,
-        visible: visible(node),
-        x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height)
-      };
-    };
-    const related = new Set();
-    const addRelated = (node) => { if (node) related.add(node); };
-    const tablist = element.closest('[role="tablist"]');
-    tablist?.querySelectorAll('[role="tab"]').forEach(addRelated);
-    const details = element.closest('details');
-    addRelated(details);
-    const ids = `${element.getAttribute('aria-controls') || ''} ${element.dataset.target || ''}`.split(/\s+/).filter(Boolean);
-    ids.forEach((id) => addRelated(document.getElementById(id) || (id.startsWith('#') ? document.querySelector(id) : null)));
-    const group = element.closest('[data-qa-group], [data-pagination], [data-slider]');
-    group?.querySelectorAll('[aria-selected], [data-page], [data-slide], [data-active], [aria-expanded], [data-current], [data-progress], [role="progressbar"]').forEach((node) => { if (node !== element) addRelated(node); });
-    return { control: describe(element), related: [...related].map(describe).filter(Boolean) };
-  });
-}
-
-function meaningfulStateChanged(before, after, kind) {
-  const normalize = (state) => {
-    const copy = JSON.parse(JSON.stringify(state));
-    // A data-qa-action control may add aria-current as an instrumentation marker.
-    // That marker alone is not a user-visible state change.
-    if (copy.control?.dataQaAction) copy.control.ariaCurrent = before.control.ariaCurrent;
-    return copy;
-  };
-  const changed = JSON.stringify(normalize(before)) !== JSON.stringify(normalize(after));
-  if (!changed) return false;
-  if (kind === 'slider' || kind === 'pagination') return true;
-  return true;
-}
-
-async function interactionQa(page, outputDir) {
-  const selector = 'button, summary, [role="tab"], [aria-expanded], [data-qa-action], [data-page], [aria-current]';
-  const locators = page.locator(selector);
-  const candidates = await page.evaluate((selectorText) => [...document.querySelectorAll(selectorText)].map((element, index) => {
-    const tag = element.tagName.toLowerCase();
-    const role = element.getAttribute('role');
-    const text = (element.innerText || '').replace(/\s+/g, ' ').trim();
-    const label = ((text.length > 1 ? text : '') || element.getAttribute('aria-label') || element.getAttribute('title') || text || tag).replace(/\s+/g, ' ').trim().slice(0, 100);
-    const rect = element.getBoundingClientRect();
-    const style = getComputedStyle(element);
-    const visible = rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
-    const disabled = element.disabled === true || element.getAttribute('aria-disabled') === 'true';
-    const hasStateMarker = tag === 'summary' || role === 'tab' || element.hasAttribute('aria-expanded') || element.hasAttribute('data-qa-action') || element.hasAttribute('data-page') || element.hasAttribute('aria-current');
-    const buttonTextLooksStateful = tag === 'button' && (/\b(prev|next|menu|toggle|accordion|slide|page|tab|open|close)\b/i.test(label) || element.closest('[role="tablist"], [data-qa-group], [data-pagination], [data-slider]'));
-    const kind = role === 'tab' ? 'tab' : tag === 'summary' ? 'accordion' : element.hasAttribute('aria-expanded') ? 'aria-expanded-toggle' : /\b(prev|next|slide|carousel)\b/i.test(label) ? 'slider' : (element.hasAttribute('data-page') || element.hasAttribute('aria-current') || /\b(page|bullet|pagination)\b/i.test(label)) ? 'pagination' : /\b(menu|hamburger)\b/i.test(label) ? 'menu' : 'button';
-    return { index, kind, label, visible, disabled, ariaSelected: element.getAttribute('aria-selected'), candidate: hasStateMarker || buttonTextLooksStateful };
-  }).filter((candidate) => candidate.visible && !candidate.disabled && candidate.candidate), selector);
-  const checks = [];
-  for (const candidate of candidates.slice(0, 24)) {
-    const locator = locators.nth(candidate.index);
-    const urlBefore = page.url();
-    try {
-      await locator.focus();
-      const focused = await locator.evaluate((element) => document.activeElement === element);
-      await locator.hover();
-      if (candidate.kind === 'tab' && candidate.ariaSelected === 'true' && await page.locator('[role="tab"][aria-selected="false"]').count() > 0) {
-        checks.push({ control: candidate.label, type: candidate.kind, status: 'SKIP', focus: focused ? 'PASS' : 'FAIL', hover: 'PASS', failureReason: 'Already-active tab skipped; another tab is available.' });
-        continue;
-      }
-      const before = await readInteractionState(locator);
-      await locator.click({ timeout: 3000, noWaitAfter: true });
-      await page.waitForTimeout(75);
-      const urlAfter = page.url();
-      if (urlAfter !== urlBefore) {
-        checks.push({ control: candidate.label, type: candidate.kind, status: 'PASS', focus: focused ? 'PASS' : 'FAIL', hover: 'PASS', urlBefore, urlAfter, before, after: null, stateChanged: true, reason: 'Navigation changed the URL; state comparison skipped.' });
-        break;
-      }
-      const after = await readInteractionState(locator);
-      const stateChanged = meaningfulStateChanged(before, after, candidate.kind);
-      const boundaryNoop = !stateChanged && candidate.kind === 'slider' && /prev|previous/i.test(candidate.label) && before.related.some((item) => /^0?1(?:\s*\/|$)/.test(item.text));
-      checks.push({ control: candidate.label, type: candidate.kind, status: stateChanged && focused ? 'PASS' : boundaryNoop ? 'SKIP' : 'FAIL', focus: focused ? 'PASS' : 'FAIL', hover: 'PASS', urlBefore, urlAfter, before, after, stateChanged, failureReason: stateChanged ? (focused ? null : 'Click state changed, but focus could not be confirmed.') : boundaryNoop ? 'Boundary control was intentionally a no-op at the first item.' : 'Click completed but no observable state change was detected.' });
-    } catch (error) {
-      const urlAfter = page.url();
-      checks.push({ control: candidate.label, type: candidate.kind, status: urlAfter !== urlBefore ? 'PASS' : 'FAIL', focus: 'FAIL', hover: 'FAIL', urlBefore, urlAfter, stateChanged: urlAfter !== urlBefore, failureReason: urlAfter !== urlBefore ? 'Navigation changed the URL; interaction failure skipped.' : error.message });
-    }
-  }
-  const failures = checks.filter((check) => check.status === 'FAIL');
-  const report = {
-    generatedAt: new Date().toISOString(), required: candidates.length > 0, controlCount: candidates.length,
-    status: candidates.length === 0 ? 'NOT_REQUIRED' : failures.length ? 'FAIL' : 'PASS', checks,
-    failureReasons: failures.map((failure) => `${failure.control} (${failure.type}): ${failure.failureReason}`)
-  };
-  fs.writeFileSync(path.join(outputDir, 'interaction-report.json'), `${JSON.stringify(report, null, 2)}\n`);
-  return report;
-}
-
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const outputDir = path.resolve(args.output || 'qa');
@@ -329,12 +222,19 @@ async function main() {
       const interactionPage = await context.newPage();
       await interactionPage.goto(url, { waitUntil: 'load' });
       await waitForStablePage(interactionPage);
-      interaction = await interactionQa(interactionPage, outputDir);
+      interaction = await runInteractionQa({
+        page: interactionPage,
+        output: path.join(outputDir, 'interaction-report.json'),
+        planPath: args['interaction-plan'] ? path.resolve(args['interaction-plan']) : null,
+        sourceRoot: process.cwd()
+      });
       await interactionPage.close();
     }
     const qualityGates = {
       geometryRequired: Boolean(args['require-geometry']),
-      responsiveRequired: Boolean(args['require-responsive'])
+      responsiveRequired: Boolean(args['require-responsive']),
+      interactionPlanRequired: Boolean(args['interaction-plan']),
+      motionRequired: Boolean(args['require-motion']) || interaction.checks?.some((check) => check.status === 'DEFERRED') || false
     };
     const report = {
       generatedAt: new Date().toISOString(), captureMode, reference: { path: referencePath, width: reference.width, height: reference.height }, actual: { path: actualPath, width: actual.width, height: actual.height },
@@ -349,9 +249,10 @@ async function main() {
         observed: { mismatchRatio: dimensionMatch ? mismatchPixels / totalPixels : 1, meaningfulRegionCount: meaningfulRegions.length, largeRegionCount: largeRegions.length, largestRegionPixels: regions[0]?.pixels || 0 },
         ignoredLowValueMismatch: visualStatus === 'PASS' && mismatchPixels > 0
       },
-      status: visualStatus, failureReasons, interactionQa: { required: interaction.required, status: interaction.status }
+      status: visualStatus, failureReasons, interactionPlan: args['interaction-plan'] ? path.resolve(args['interaction-plan']) : null, interactionQa: { required: interaction.required, status: interaction.status }
     };
     fs.writeFileSync(path.join(outputDir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
+    if (args['set-latest']) writeLatestRun(process.cwd(), outputDir);
     if (visualStatus === 'FAIL' || interaction.status === 'FAIL') process.exitCode = 1;
     await context.close();
   } finally { await browser.close(); }

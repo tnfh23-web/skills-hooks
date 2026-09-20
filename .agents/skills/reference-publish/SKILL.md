@@ -10,12 +10,12 @@ Reconstruct the intended web interface while preserving reference fidelity. The 
 ## Required loop
 
 1. **SEE** — inspect the reference, available local assets, fonts, and any existing page before coding.
-2. **INFER** — implement only interactions that are clear or strongly implied by visible affordances. If evidence is absent, do not invent behavior. Before coding, create `work/reference-spec.json` with reference pixel dimensions, capture mode, viewport dimensions, sections, asset inventory, typography/fallback notes, and major elements. Prefer source-provided bounds; otherwise use `npm run qa:measure` and lower confidence only where deterministic measurement is unavailable.
+2. **INFER** — implement only interactions that are clear or strongly implied by visible affordances. If evidence is absent, do not invent behavior. Before coding, create `work/reference-spec.json` with reference pixel dimensions, capture mode, viewport dimensions, sections, asset inventory, typography/fallback notes, and major elements. Prefer source-provided bounds; otherwise use `npm run qa:measure` and lower confidence only where deterministic measurement is unavailable. Once the static build is stable, automatically enter the `interaction-ready` phase: discover evidence, review the single `work/interaction-plan.json`, route patterns, and verify them.
 3. **BUILD** — implement HTML/CSS/JS using local resources first. Match typography, wrapping, dimensions, spacing, crop, positioning, color, borders, radius, alignment, and z-order. Exact pixel corrections are acceptable.
 4. **CAPTURE** — run the repository Visual QA command against a fixed Chromium viewport. Choose `viewport` for a single-screen reference or `fullPage` for a long document reference. It waits for fonts, images, and layout stability and disables motion for the comparison capture. A long reference image does not become the browser viewport height.
 5. **COMPARE / DIAGNOSE** — inspect `qa/report.json`, `qa/actual.png`, and `qa/diff.png`. Use the reported largest mismatch regions and DOM labels to choose one high-impact cause. Compare reference pixel coordinates to Chromium document coordinates with `npm run qa:geometry`; it records `dx/dy/dw/dh` and only non-null typography expectations are asserted. Use `npm run qa:responsive` at 1024×768 and 390×844 for structural checks; internal carousel overflow is exempt when it is part of the existing slider structure.
 6. **REPAIR** — change the smallest related scope, then capture and compare again. Record before/after mismatch numbers when useful. Do not rewrite the whole page because one region is wrong.
-7. **VERIFY** — run visual QA again after the final change. If interactive controls are present, run the built-in low-risk interaction checks too.
+7. **VERIFY** — run visual QA again after the final change. If interactive controls are present, run semantic Interaction QA. Run Motion QA separately for continuous/scroll candidates so a motion-disabled screenshot is never mistaken for motion verification.
 
 ## Interaction inference
 
@@ -50,6 +50,6 @@ For pages with clearly detectable controls, the runner performs low-risk focus/h
 
 Before saying the task is complete, ensure the latest `qa/report.json` is PASS and, when interaction QA is required, `qa/interaction-report.json` is PASS. When `qualityGates.geometryRequired` or `qualityGates.responsiveRequired` is true, the corresponding reports must also be PASS. The source fingerprint must match the latest report. If a gate fails, inspect the artifacts, fix the largest remaining mismatch, and run verification again. In Codex app, reopen/reload or trust project hooks if needed, then run a hook smoke test before completion.
 
-## V1 boundaries
+## Controlled evolution from V1
 
-Do not add planner/evaluator/coder subagents, routers, state managers, font extraction, PSD parsing, deploy workflows, or a large interaction recipe library. Add capability only after a benchmark demonstrates the need.
+V1 correctly prohibited speculative agents and a large interaction recipe library. Repeated project corpus, benchmark evidence, semantic Interaction QA gaps, and the current workflow goal now justify one evidence-driven interaction phase. Scope remains controlled: no invented Codex subagent schema, router/state framework, memory subsystem, font/PSD/deploy expansion, CDN default, or large effect library. Planning and verification stay separable through `work/interaction-plan.json` and independent QA tools; only carousel-state and marquee are currently Dedicated Skills.

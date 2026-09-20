@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Interaction motion fixture</title>
+<style>
+html{font-size:62.5%}body{margin:0;font:1.6rem Arial,sans-serif;overflow-x:hidden}.fixture{padding:2rem}.panel,.drawer{padding:1rem;background:#eee}.drawer[hidden],[role=tabpanel][hidden],#accordion-panel[hidden]{display:none}.slide{display:none}.slide.active{display:block}.dot.active,.thumb.active{font-weight:bold}.hover-card{padding:2rem;background:rgb(230,230,230);transition:background-color .05s}.hover-card:hover{background:rgb(80,80,80);color:white}.marquee{width:30rem;overflow:hidden}.marquee__track{display:flex;width:max-content;animation:marquee 3s linear infinite}.marquee__group{display:flex;flex:none;width:60rem;justify-content:space-around}@keyframes marquee{to{transform:translateX(-60rem)}}.story{height:240rem;margin-top:4rem}.story__sample{box-sizing:border-box;width:calc(100% - 14rem);position:sticky;top:10rem;padding:2rem;background:#def;transform:translateX(calc(var(--progress,0) * 10rem));opacity:calc(.4 + var(--progress,0) * .6)}@media(max-width:500px){.hover-meta{display:block!important;opacity:1!important}}@media(prefers-reduced-motion:reduce){.marquee__track{animation:none}.story__sample{transform:none;opacity:1}}
+</style>
+</head>
+<body>
+<main class="fixture">
+  <div id="tabs" role="tablist"><button role="tab" aria-selected="true" aria-controls="panel-a">A</button><button role="tab" aria-selected="false" aria-controls="panel-b">B</button></div>
+  <section id="panel-a" role="tabpanel">Panel A</section><section id="panel-b" role="tabpanel" hidden>Panel B</section>
+
+  <section id="accordion"><button id="accordion-toggle" aria-expanded="false" aria-controls="accordion-panel">Details</button><div id="accordion-panel" hidden>Expanded copy</div></section>
+
+  <section id="drawer-shell" data-interaction-root><button id="drawer-toggle" aria-expanded="false" aria-controls="drawer-panel">Open drawer</button><aside id="drawer-panel" class="drawer" data-drawer role="dialog" hidden><button id="drawer-close">Close</button></aside></section>
+
+  <section id="carousel" data-carousel>
+    <article class="slide active" data-slide data-active="true">One</article><article class="slide" data-slide>Two</article><article class="slide" data-slide>Three</article>
+    <button data-next aria-label="Next slide">Next</button><span data-current>1</span>/<span data-total>3</span>
+    <button class="dot active" data-page aria-current="true">1</button><button class="dot" data-page>2</button><button class="dot" data-page>3</button>
+    <div role="progressbar" aria-valuemin="1" aria-valuemax="3" aria-valuenow="1"></div>
+    <button class="thumb active" data-thumbnail aria-current="true">Thumb 1</button><button class="thumb" data-thumbnail>Thumb 2</button><button class="thumb" data-thumbnail>Thumb 3</button>
+  </section>
+
+  <article id="hover-card" class="hover-card" data-hover-contract tabindex="0"><strong>Project</strong><span class="hover-meta">Essential metadata</span></article>
+
+  <section id="marquee" class="marquee" data-marquee><div class="marquee__track" data-marquee-track><div class="marquee__group" data-marquee-original><span>Alpha</span><span>Beta</span><span>Gamma</span></div><div class="marquee__group" data-marquee-copy aria-hidden="true"><span>Alpha</span><span>Beta</span><span>Gamma</span></div></div></section>
+
+  <section id="story" class="story" data-scroll-story><div id="story-sample" class="story__sample" data-progress="0">Story content</div></section>
+</main>
+<script>
+const tabs=[...document.querySelectorAll('[role=tab]')];tabs.forEach((tab)=>tab.onclick=()=>tabs.forEach((item)=>{const active=item===tab;item.setAttribute('aria-selected',String(active));document.getElementById(item.getAttribute('aria-controls')).hidden=!active;}));
+const accordionToggle=document.getElementById('accordion-toggle');const accordionPanel=document.getElementById('accordion-panel');accordionToggle.onclick=()=>{const open=accordionToggle.getAttribute('aria-expanded')!=='true';accordionToggle.setAttribute('aria-expanded',String(open));accordionPanel.hidden=!open};
+const drawerShell=document.getElementById('drawer-shell');const drawerToggle=document.getElementById('drawer-toggle');const drawerPanel=document.getElementById('drawer-panel');const closeDrawer=()=>{drawerToggle.setAttribute('aria-expanded','false');drawerPanel.hidden=true;drawerToggle.focus()};drawerToggle.onclick=()=>{drawerToggle.setAttribute('aria-expanded','true');drawerPanel.hidden=false;document.getElementById('drawer-close').focus()};document.getElementById('drawer-close').onclick=closeDrawer;document.addEventListener('keydown',(event)=>{if(event.key==='Escape')closeDrawer()});document.addEventListener('click',(event)=>{if(drawerToggle.getAttribute('aria-expanded')==='true'&&!drawerShell.contains(event.target))closeDrawer()});
+let index=0;const slides=[...document.querySelectorAll('.slide')];const dots=[...document.querySelectorAll('.dot')];const thumbs=[...document.querySelectorAll('.thumb')];const render=()=>{slides.forEach((node,i)=>{node.classList.toggle('active',i===index);if(i===index)node.dataset.active='true';else delete node.dataset.active});document.querySelector('[data-current]').textContent=String(index+1);dots.forEach((node,i)=>{node.classList.toggle('active',i===index);node.toggleAttribute('aria-current',i===index)});thumbs.forEach((node,i)=>{node.classList.toggle('active',i===index);node.toggleAttribute('aria-current',i===index)});document.querySelector('[role=progressbar]').setAttribute('aria-valuenow',String(index+1))};document.querySelector('[data-next]').onclick=()=>{index=(index+1)%slides.length;render()};
+const story=document.getElementById('story');const sample=document.getElementById('story-sample');const updateStory=()=>{const start=story.offsetTop;const distance=Math.max(1,story.offsetHeight-innerHeight);const progress=Math.max(0,Math.min(1,(scrollY-start)/distance));sample.dataset.progress=progress.toFixed(2);sample.style.setProperty('--progress',progress)};addEventListener('scroll',updateStory,{passive:true});updateStory();
+</script>
+</body></html>

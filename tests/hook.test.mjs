@@ -8,10 +8,22 @@ const failDir = path.join(root, 'work', 'qa-contract', 'fail');
 const passDir = path.join(root, 'work', 'qa-contract', 'pass');
 const interactionFailDir = path.join(root, 'work', 'qa-contract', 'interaction-fail');
 const staleDir = path.join(root, 'work', 'qa-contract', 'stale');
+const interactionStaleDir = path.join(root, 'work', 'qa-contract', 'interaction-stale');
+const canonicalDir = path.join(root, 'work', 'qa-contract', 'canonical');
+const motionStaleDir = path.join(root, 'work', 'qa-contract', 'motion-stale');
+const missingEvidenceDir = path.join(root, 'work', 'qa-contract', 'missing-evidence');
 fs.rmSync(interactionFailDir, { recursive: true, force: true });
 fs.rmSync(staleDir, { recursive: true, force: true });
+fs.rmSync(interactionStaleDir, { recursive: true, force: true });
+fs.rmSync(canonicalDir, { recursive: true, force: true });
+fs.rmSync(motionStaleDir, { recursive: true, force: true });
+fs.rmSync(missingEvidenceDir, { recursive: true, force: true });
 fs.mkdirSync(path.join(interactionFailDir, 'qa'), { recursive: true });
 fs.mkdirSync(path.join(staleDir, 'qa'), { recursive: true });
+fs.mkdirSync(path.join(interactionStaleDir, 'qa'), { recursive: true });
+fs.mkdirSync(path.join(canonicalDir, 'qa'), { recursive: true });
+fs.mkdirSync(path.join(motionStaleDir, 'qa'), { recursive: true });
+fs.mkdirSync(path.join(missingEvidenceDir, 'qa'), { recursive: true });
 fs.copyFileSync(path.join(passDir, 'qa', 'report.json'), path.join(interactionFailDir, 'qa', 'report.json'));
 fs.copyFileSync(path.join(passDir, 'qa', 'actual.png'), path.join(interactionFailDir, 'qa', 'actual.png'));
 fs.copyFileSync(path.join(passDir, 'qa', 'diff.png'), path.join(interactionFailDir, 'qa', 'diff.png'));
@@ -44,4 +56,40 @@ fs.writeFileSync(path.join(staleDir, 'qa', 'report.json'), `${JSON.stringify(sta
 const stale = run(staleDir);
 assert.equal(stale.continue, false);
 assert.match(stale.stopReason, /stale|source changed/i);
-console.log('Stop Hook FAIL block and PASS allow: PASS');
+
+for (const name of ['report.json', 'actual.png', 'diff.png', 'interaction-report.json']) fs.copyFileSync(path.join(passDir, 'qa', name), path.join(interactionStaleDir, 'qa', name));
+const interactionStaleReport = JSON.parse(fs.readFileSync(path.join(interactionStaleDir, 'qa', 'interaction-report.json'), 'utf8'));
+interactionStaleReport.sourceFingerprint.value = 'stale-interaction-fingerprint';
+fs.writeFileSync(path.join(interactionStaleDir, 'qa', 'interaction-report.json'), `${JSON.stringify(interactionStaleReport, null, 2)}\n`);
+const interactionStale = run(interactionStaleDir);
+assert.equal(interactionStale.continue, false);
+assert.match(interactionStale.stopReason, /interaction.*stale|stale.*interaction/i);
+
+const selectedQa = path.join(canonicalDir, 'qa-v12', 'final'); fs.mkdirSync(selectedQa, { recursive: true });
+for (const name of ['report.json', 'actual.png', 'diff.png', 'interaction-report.json']) fs.copyFileSync(path.join(passDir, 'qa', name), path.join(selectedQa, name));
+fs.copyFileSync(path.join(failDir, 'qa', 'report.json'), path.join(canonicalDir, 'qa', 'report.json'));
+fs.writeFileSync(path.join(canonicalDir, 'qa', 'latest-run.json'), `${JSON.stringify({ version: 1, outputDir: 'qa-v12/final' }, null, 2)}\n`);
+const canonical = run(canonicalDir);
+assert.equal(canonical.continue, true, 'hook must trust the selected latest run instead of stale qa/report.json');
+assert.match(canonical.systemMessage, /qa-v12/i);
+
+for (const name of ['report.json', 'actual.png', 'diff.png', 'interaction-report.json']) fs.copyFileSync(path.join(passDir, 'qa', name), path.join(motionStaleDir, 'qa', name));
+const motionVisual = JSON.parse(fs.readFileSync(path.join(motionStaleDir, 'qa', 'report.json'), 'utf8'));
+motionVisual.qualityGates.motionRequired = true;
+fs.writeFileSync(path.join(motionStaleDir, 'qa', 'report.json'), `${JSON.stringify(motionVisual, null, 2)}\n`);
+fs.writeFileSync(path.join(motionStaleDir, 'qa', 'motion-report.json'), `${JSON.stringify({ status: 'PASS', sourceRoot: motionVisual.sourceRoot, sourceFingerprint: { ...motionVisual.sourceFingerprint, value: 'stale-motion-fingerprint' }, checks: [] }, null, 2)}\n`);
+const motionStale = run(motionStaleDir);
+assert.equal(motionStale.continue, false);
+assert.match(motionStale.stopReason, /motion.*stale|stale.*motion/i);
+
+for (const name of ['report.json', 'actual.png', 'diff.png', 'interaction-report.json']) fs.copyFileSync(path.join(passDir, 'qa', name), path.join(missingEvidenceDir, 'qa', name));
+const evidencePlanPath = path.join(missingEvidenceDir, 'interaction-plan.json');
+fs.writeFileSync(evidencePlanPath, `${JSON.stringify({ version: 1, designMode: 'reference', motionLanguage: null, candidates: [{ id: 'missing-high', selector: '#control', semanticType: 'tabs', intent: 'test', evidence: ['explicit test'], provenance: 'annotation', confidence: 'high', implementation: 'required', recipe: 'tabs', requiredStates: ['selected-tab'], responsiveBehavior: 'preserve controls', reducedMotionBehavior: 'preserve state', verification: {} }] }, null, 2)}\n`);
+const evidenceVisual = JSON.parse(fs.readFileSync(path.join(missingEvidenceDir, 'qa', 'report.json'), 'utf8'));
+evidenceVisual.qualityGates.interactionPlanRequired = true; evidenceVisual.interactionPlan = evidencePlanPath;
+fs.writeFileSync(path.join(missingEvidenceDir, 'qa', 'report.json'), `${JSON.stringify(evidenceVisual, null, 2)}\n`);
+const missingEvidence = run(missingEvidenceDir);
+assert.equal(missingEvidence.continue, false);
+assert.match(missingEvidence.stopReason, /evidence/i);
+
+console.log('Stop Hook visual/interaction/freshness/canonical-run contracts: PASS');
