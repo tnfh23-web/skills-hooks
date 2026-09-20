@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createSourceFingerprint } from './source-fingerprint.mjs';
 import { discoverInteractionPlan, readInteractionPlan } from './interaction-plan.mjs';
+import { patternForCandidate } from './interaction-patterns.mjs';
 
 function parseArgs(argv) {
   const args = {};
@@ -30,7 +31,8 @@ async function snapshot(page, candidate) {
       return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) !== 0;
     };
     const globalOrRoot = (selector) => selector ? (root.querySelector(selector) || document.querySelector(selector)) : null;
-    const controls = [...root.querySelectorAll('button, summary, [role="tab"], [aria-expanded]')];
+    const controlSelector = 'button, a, summary, [role="button"], [role="tab"], [aria-expanded]';
+    const controls = [...(root.matches(controlSelector) ? [root] : []), ...root.querySelectorAll(controlSelector)];
     const state = {
       root: { className: root.className || '', visible: visible(root), text: (root.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 160) },
       controls: controls.map((node) => ({ text: (node.textContent || node.getAttribute('aria-label') || '').trim(), selected: node.getAttribute('aria-selected'), expanded: node.getAttribute('aria-expanded'), current: node.getAttribute('aria-current'), className: node.className || '' }))
@@ -138,11 +140,24 @@ async function clickTarget(page, candidate, purpose) {
     return target.click({ timeout: 3000 });
   }
   if (purpose === 'close') return page.keyboard.press('Escape');
+  const selector = candidate.verification?.controlSelector;
+  if (selector) return page.locator(selector).first().click({ timeout: 3000 });
+  if (await root.evaluate((node) => node.matches('button, a, summary, [role="button"], [aria-expanded]'))) return root.click({ timeout: 3000 });
+  return root.locator('button, a, summary, [role="button"], [aria-expanded]').first().click({ timeout: 3000 });
 }
 
 async function verifyCandidate(page, candidate) {
+  const route = patternForCandidate(candidate);
+  const routing = route ? { category: route.category, verifier: route.verifier, automation: route.automation, layer: route.layer } : null;
   const before = await snapshot(page, candidate);
-  if (before.missing) return { candidateId: candidate.id, type: candidate.semanticType, status: 'FAIL', before, after: null, failureReason: `Selector not found: ${candidate.selector}` };
+  if (before.missing) return { candidateId: candidate.id, type: candidate.semanticType, recipe: candidate.recipe, routing, status: 'FAIL', before, after: null, failureReason: `Selector not found: ${candidate.selector}` };
+  if (!route) return { candidateId: candidate.id, type: candidate.semanticType, recipe: candidate.recipe, routing, status: 'FAIL', before, after: null, failureReason: `No verifier route is registered for recipe: ${candidate.recipe}` };
+  if (route.verifier === 'motion-qa') {
+    return { candidateId: candidate.id, control: candidate.selector, type: candidate.semanticType, recipe: candidate.recipe, routing, status: 'DEFERRED', before, after: null, evidence: { verifier: 'motion-qa', clicked: false }, failureReason: null };
+  }
+  if (route.verifier === 'manual') {
+    return { candidateId: candidate.id, control: candidate.selector, type: candidate.semanticType, recipe: candidate.recipe, routing, status: 'UNSUPPORTED', before, after: null, evidence: { verifier: 'manual', clicked: false }, failureReason: `Automated verification is unsupported for ${candidate.recipe}; provide manual evidence or skip the candidate explicitly.` };
+  }
   try {
     if (candidate.semanticType === 'hover') {
       const root = page.locator(candidate.selector).first(); await root.hover(); await waitFrame(page); await page.waitForTimeout(75); const active = await snapshot(page, candidate);
@@ -151,9 +166,8 @@ async function verifyCandidate(page, candidate) {
       const reversible = candidate.verification?.reversible !== false;
       const returns = !reversible || JSON.stringify(before.hover) === JSON.stringify(restored.hover);
       const pass = changed && returns;
-      return { candidateId: candidate.id, control: candidate.selector, type: candidate.semanticType, status: pass ? 'PASS' : 'FAIL', before, after: active, restored, evidence: { changedOnEnter: changed, restoredOnLeave: returns }, failureReason: pass ? null : !changed ? 'Pointer enter produced no allowed observable state.' : 'Pointer leave did not restore the reversible state.' };
+      return { candidateId: candidate.id, control: candidate.selector, type: candidate.semanticType, recipe: candidate.recipe, routing, status: pass ? 'PASS' : 'FAIL', before, after: active, restored, evidence: { changedOnEnter: changed, restoredOnLeave: returns }, failureReason: pass ? null : !changed ? 'Pointer enter produced no allowed observable state.' : 'Pointer leave did not restore the reversible state.' };
     }
-    if (['marquee', 'scroll-story'].includes(candidate.semanticType)) return { candidateId: candidate.id, control: candidate.selector, type: candidate.semanticType, status: 'DEFERRED', before, after: null, evidence: { verifier: 'motion-qa' }, failureReason: null };
     await clickTarget(page, candidate, 'activate'); await waitFrame(page); const after = await snapshot(page, candidate);
     let pass = false; let reason = 'State did not satisfy its semantic contract after activation.';
     if (candidate.semanticType === 'tabs') pass = tabValid(before) && tabValid(after) && JSON.stringify(before.tabs) !== JSON.stringify(after.tabs);
@@ -171,15 +185,15 @@ async function verifyCandidate(page, candidate) {
       }
       pass = opened && closed && outsideClosed && focusValid;
       reason = !opened ? 'Drawer control and panel open state are not synchronized.' : !focusValid ? 'Drawer did not move focus into the panel as required.' : 'Drawer opened but its required close behavior failed.';
-      return { candidateId: candidate.id, control: candidate.selector, type: candidate.semanticType, status: pass ? 'PASS' : 'FAIL', before, after, closeState, outsideCloseState, evidence: { opened, closed, outsideClosed, focusValid, closeOnEscape: Boolean(candidate.verification?.closeOnEscape), closeOnOutside: Boolean(candidate.verification?.closeOnOutside) }, failureReason: pass ? null : reason };
+      return { candidateId: candidate.id, control: candidate.selector, type: candidate.semanticType, recipe: candidate.recipe, routing, status: pass ? 'PASS' : 'FAIL', before, after, closeState, outsideCloseState, evidence: { opened, closed, outsideClosed, focusValid, closeOnEscape: Boolean(candidate.verification?.closeOnEscape), closeOnOutside: Boolean(candidate.verification?.closeOnOutside) }, failureReason: pass ? null : reason };
     } else if (candidate.semanticType === 'carousel') {
       const changed = before.carousel?.activeIndexes?.[0] !== after.carousel?.activeIndexes?.[0];
       pass = carouselValid(before) && carouselValid(after) && changed;
       reason = !changed ? 'Active slide did not change.' : 'Carousel changed partially; slide, counter, pagination, progress, or thumbnail state is out of sync.';
     } else pass = JSON.stringify(before) !== JSON.stringify(after);
-    return { candidateId: candidate.id, control: candidate.selector, type: candidate.semanticType, status: pass ? 'PASS' : 'FAIL', before, after, evidence: { semanticContract: pass }, failureReason: pass ? null : reason };
+    return { candidateId: candidate.id, control: candidate.selector, type: candidate.semanticType, recipe: candidate.recipe, routing, status: pass ? 'PASS' : 'FAIL', before, after, evidence: { semanticContract: pass }, failureReason: pass ? null : reason };
   } catch (error) {
-    return { candidateId: candidate.id, control: candidate.selector, type: candidate.semanticType, status: 'FAIL', before, after: null, failureReason: error.message };
+    return { candidateId: candidate.id, control: candidate.selector, type: candidate.semanticType, recipe: candidate.recipe, routing, status: 'FAIL', before, after: null, failureReason: error.message };
   }
 }
 
@@ -204,14 +218,19 @@ export async function runInteractionQa({ page, output, plan = null, planPath = n
   for (const candidate of candidates) checks.push(await verifyCandidate(page, candidate));
   const mobileChecks = checkMobile ? await verifyMobileEssentialContent(page, candidates) : [];
   const failures = [...checks.filter((check) => check.status === 'FAIL'), ...mobileChecks.filter((check) => check.status === 'FAIL')];
-  const activeChecks = checks.filter((check) => check.status !== 'DEFERRED');
+  const activeChecks = checks.filter((check) => !['DEFERRED', 'UNSUPPORTED'].includes(check.status));
+  const motionChecks = checks.filter((check) => check.routing?.verifier === 'motion-qa');
+  const unsupportedChecks = checks.filter((check) => check.status === 'UNSUPPORTED');
   const report = {
     generatedAt: new Date().toISOString(),
     sourceRoot: path.resolve(sourceRoot),
     sourceFingerprint: createSourceFingerprint(sourceRoot),
     plan: planPath ? path.resolve(planPath) : null,
-    required: candidates.some((candidate) => !['marquee', 'scroll-story'].includes(candidate.semanticType)),
+    required: candidates.some((candidate) => patternForCandidate(candidate)?.verifier === 'interaction-qa'),
+    motionRequired: motionChecks.length > 0,
     candidateCount: candidates.length,
+    deferredCount: motionChecks.length,
+    unsupportedCount: unsupportedChecks.length,
     status: failures.length ? 'FAIL' : activeChecks.length ? 'PASS' : 'NOT_REQUIRED',
     checks, mobileChecks,
     failureReasons: failures.map((failure) => `${failure.candidateId}: ${failure.failureReason || failure.reason}`)

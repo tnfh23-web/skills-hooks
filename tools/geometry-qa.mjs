@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { createSourceFingerprint } from './source-fingerprint.mjs';
 
 function parseArgs(argv) {
   const args = {};
@@ -16,7 +17,7 @@ function parseArgs(argv) {
 const fileUrl = (value) => /^[a-z]+:\/\//i.test(value) ? value : new URL(`file://${path.resolve(value).replaceAll('\\', '/')}`).href;
 const round = (value) => Math.round(value * 100) / 100;
 
-export async function measureGeometry({ url, spec, output, width, height }) {
+export async function measureGeometry({ url, spec, output, width, height, sourceRoot = process.cwd() }) {
   const browser = await chromium.launch({ headless: true });
   try {
     const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
@@ -43,7 +44,7 @@ export async function measureGeometry({ url, spec, output, width, height }) {
       return { ...entry, status: critical ? 'FAIL' : boxMismatch || typographyMismatch ? 'WARN' : 'PASS', boxMismatch, typographyMismatch, critical };
     });
     const criticalMismatches = results.filter((entry) => entry.critical || entry.status === 'FAIL');
-    const report = { generatedAt: new Date().toISOString(), status: criticalMismatches.length ? 'FAIL' : 'PASS', tolerance, expectedCount: results.length, criticalMismatchCount: criticalMismatches.length, elements: results, failureReasons: criticalMismatches.map((entry) => `${entry.selector}: ${entry.reason || 'geometry or typography differs beyond the configured tolerance.'}`) };
+    const report = { generatedAt: new Date().toISOString(), sourceRoot: path.resolve(sourceRoot), sourceFingerprint: createSourceFingerprint(sourceRoot), status: criticalMismatches.length ? 'FAIL' : 'PASS', tolerance, expectedCount: results.length, criticalMismatchCount: criticalMismatches.length, elements: results, failureReasons: criticalMismatches.map((entry) => `${entry.selector}: ${entry.reason || 'geometry or typography differs beyond the configured tolerance.'}`) };
     fs.mkdirSync(path.dirname(output), { recursive: true }); fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
     await context.close();
     return report;
@@ -53,7 +54,7 @@ export async function measureGeometry({ url, spec, output, width, height }) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const spec = JSON.parse(fs.readFileSync(path.resolve(args.spec), 'utf8'));
-  const report = await measureGeometry({ url: args.url, spec, output: path.resolve(args.output || 'qa/geometry-report.json'), width: Number(args.width || spec.viewport.width), height: Number(args.height || spec.viewport.height) });
+  const report = await measureGeometry({ url: args.url, spec, output: path.resolve(args.output || 'qa/geometry-report.json'), width: Number(args.width || spec.viewport.width), height: Number(args.height || spec.viewport.height), sourceRoot: args['source-root'] || process.cwd() });
   process.exitCode = report.status === 'PASS' ? 0 : 1;
 }
 

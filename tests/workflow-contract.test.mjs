@@ -5,6 +5,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createReferenceSpec, validateReferenceSpec } from '../tools/reference-spec.mjs';
 import { measureGeometry } from '../tools/geometry-qa.mjs';
 import { runResponsiveQa } from '../tools/responsive-qa.mjs';
+import { createSourceFingerprint, sourceFiles } from '../tools/source-fingerprint.mjs';
 
 const root = process.cwd();
 const out = path.join(root, 'work', 'workflow-contract');
@@ -18,6 +19,7 @@ assert.equal(validateReferenceSpec(geometrySpec).valid, true);
 assert.equal(validateReferenceSpec({}).valid, false);
 const geometryReport = await measureGeometry({ url: geometryFixture, spec: geometrySpec, output: path.join(out, 'geometry.json'), width: 200, height: 200 });
 assert.equal(geometryReport.status, 'PASS');
+assert.ok(geometryReport.sourceFingerprint.value);
 assert.equal(geometryReport.elements.find((entry) => entry.selector === '#box').deltas.dx, 0);
 const typographyIgnored = await measureGeometry({ url: geometryFixture, spec: { ...geometrySpec, majorElements: [{ ...geometrySpec.majorElements[1], typography: { fontFamily: null, fontSize: null } }] }, output: path.join(out, 'typography-null.json'), width: 200, height: 200 });
 assert.equal(typographyIgnored.status, 'PASS');
@@ -26,8 +28,25 @@ assert.equal(geometryMismatch.status, 'FAIL');
 
 const responsivePass = await runResponsiveQa({ url: path.join(root, 'tests', 'fixtures', 'responsive.html'), output: path.join(out, 'responsive.json') });
 assert.equal(responsivePass.status, 'PASS');
+assert.ok(responsivePass.sourceFingerprint.value);
 const responsiveFail = await runResponsiveQa({ url: path.join(root, 'tests', 'fixtures', 'responsive-overflow.html'), output: path.join(out, 'responsive-fail.json') });
 assert.equal(responsiveFail.status, 'FAIL');
+
+const fingerprintRoot = path.join(out, 'fingerprint-root');
+for (const directory of ['qa', 'qa-v12', 'qa_output', 'qa.archive', 'qaSomething']) fs.mkdirSync(path.join(fingerprintRoot, directory), { recursive: true });
+fs.writeFileSync(path.join(fingerprintRoot, 'index.html'), '<main>source</main>');
+fs.writeFileSync(path.join(fingerprintRoot, 'qa', 'report.json'), 'artifact');
+fs.writeFileSync(path.join(fingerprintRoot, 'qa-v12', 'report.json'), 'artifact');
+fs.writeFileSync(path.join(fingerprintRoot, 'qa_output', 'report.json'), 'artifact');
+fs.writeFileSync(path.join(fingerprintRoot, 'qa.archive', 'report.json'), 'artifact');
+fs.writeFileSync(path.join(fingerprintRoot, 'qaSomething', 'source.js'), 'real source');
+const fingerprintFiles = sourceFiles(fingerprintRoot);
+assert.deepEqual(fingerprintFiles, ['index.html', 'qaSomething/source.js']);
+const beforeFingerprint = createSourceFingerprint(fingerprintRoot).value;
+fs.writeFileSync(path.join(fingerprintRoot, 'qa', 'report.json'), 'changed artifact');
+assert.equal(createSourceFingerprint(fingerprintRoot).value, beforeFingerprint, 'exact QA artifact roots must be ignored');
+fs.writeFileSync(path.join(fingerprintRoot, 'qaSomething', 'source.js'), 'changed real source');
+assert.notEqual(createSourceFingerprint(fingerprintRoot).value, beforeFingerprint, 'qa-prefixed source directories must remain fingerprinted');
 
 function runVisual(fixture, name) {
   const bootstrap = path.join(out, `${name}-bootstrap`); const qa = path.join(out, name);

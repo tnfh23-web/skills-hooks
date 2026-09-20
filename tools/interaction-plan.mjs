@@ -3,21 +3,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createSourceFingerprint } from './source-fingerprint.mjs';
+import { KNOWN_RECIPES, PATTERN_REGISTRY } from './interaction-patterns.mjs';
 
-export const KNOWN_RECIPES = new Set([
-  'tabs', 'accordion', 'drawer', 'carousel-state', 'marquee',
-  'hover-reveal', 'scroll-reveal', 'scroll-story', 'scene-transition'
-]);
-
-const REQUIRED_STATES = {
-  tabs: ['selected-tab', 'visible-panel'],
-  accordion: ['expanded-control', 'visible-panel'],
-  drawer: ['closed', 'open', 'close'],
-  carousel: ['active-slide', 'counter', 'pagination', 'progress'],
-  marquee: ['moving-track', 'accessible-duplicate', 'reduced-motion'],
-  hover: ['rest', 'hover', 'restored'],
-  'scroll-story': ['start', 'intermediate', 'final']
-};
+export { KNOWN_RECIPES } from './interaction-patterns.mjs';
 
 function parseArgs(argv) {
   const args = {};
@@ -37,8 +25,8 @@ export function validateInteractionPlan(plan) {
   if (plan.version !== 1) errors.push('version must be 1');
   if (!['reference', 'design'].includes(plan.designMode)) errors.push('designMode must be reference or design');
   if (!Array.isArray(plan.candidates)) errors.push('candidates must be an array');
-  if (plan.designMode === 'design' && (!plan.motionLanguage || !plan.motionLanguage.character || !plan.motionLanguage.pace)) {
-    errors.push('DESIGN_MODE requires motionLanguage.character and motionLanguage.pace');
+  if (plan.designMode === 'design' && (!plan.motionLanguage || !plan.motionLanguage.character || !plan.motionLanguage.pace || !Array.isArray(plan.motionLanguage.preferredFamilies) || !Array.isArray(plan.motionLanguage.bannedFamilies) || !plan.motionLanguage.sectionEntryVariation || !plan.motionLanguage.pointerUsage || !plan.motionLanguage.continuousMotionUsage || !plan.motionLanguage.scrollStory)) {
+    errors.push('DESIGN_MODE requires a complete motionLanguage contract');
   }
   const ids = new Set();
   for (const [index, candidate] of (plan.candidates || []).entries()) {
@@ -48,10 +36,11 @@ export function validateInteractionPlan(plan) {
     if (!candidate?.selector || typeof candidate.selector !== 'string') errors.push(`${at}.selector is required`);
     if (!candidate?.semanticType || typeof candidate.semanticType !== 'string') errors.push(`${at}.semanticType is required`);
     if (!['high', 'medium', 'low'].includes(candidate?.confidence)) errors.push(`${at}.confidence must be high, medium, or low`);
-    if (!['reference-state', 'annotation', 'dom-affordance', 'design-language'].includes(candidate?.provenance)) errors.push(`${at}.provenance is invalid`);
+    if (!['reference-state', 'source-annotation', 'annotation', 'dom-affordance', 'design-language'].includes(candidate?.provenance)) errors.push(`${at}.provenance is invalid`);
     if (!candidate?.recipe || !KNOWN_RECIPES.has(candidate.recipe)) errors.push(`${at}.recipe is unknown: ${candidate?.recipe || '(missing)'}`);
     if (!Array.isArray(candidate?.evidence) || candidate.evidence.length === 0) errors.push(`${at}.evidence must contain at least one fact`);
     if (!Array.isArray(candidate?.requiredStates)) errors.push(`${at}.requiredStates must be an array`);
+    else if (PATTERN_REGISTRY[candidate?.recipe] && JSON.stringify(candidate.requiredStates) !== JSON.stringify(PATTERN_REGISTRY[candidate.recipe].requiredStates)) errors.push(`${at}.requiredStates must match the pattern registry`);
     if (!candidate?.responsiveBehavior) errors.push(`${at}.responsiveBehavior is required`);
     if (!candidate?.reducedMotionBehavior) errors.push(`${at}.reducedMotionBehavior is required`);
     if (!candidate?.verification || typeof candidate.verification !== 'object') errors.push(`${at}.verification is required`);
@@ -62,8 +51,8 @@ export function validateInteractionPlan(plan) {
   return { valid: errors.length === 0, errors };
 }
 
-function requiredStatesFor(type) {
-  return REQUIRED_STATES[type] || ['rest', 'active'];
+function requiredStatesFor(recipe) {
+  return PATTERN_REGISTRY[recipe]?.requiredStates || ['rest', 'active'];
 }
 
 export async function discoverInteractionPlan(page, { designMode = 'reference', sourceRoot = process.cwd(), motionLanguage = null } = {}) {
@@ -82,12 +71,12 @@ export async function discoverInteractionPlan(page, { designMode = 'reference', 
       return `${prefix || node.tagName.toLowerCase()}:nth-of-type(${Math.max(1, peers.indexOf(node) + 1)})`;
     };
     const found = []; const seen = new Set();
-    const add = (root, semanticType, recipe, evidence, confidence = 'high', verification = {}) => {
+    const add = (root, semanticType, recipe, evidence, confidence = 'high', verification = {}, provenance = 'dom-affordance') => {
       if (!root || !visible(root)) return;
       const selector = selectorFor(root, root.tagName.toLowerCase());
       const key = `${semanticType}:${selector}`;
       if (seen.has(key)) return; seen.add(key);
-      found.push({ selector, semanticType, recipe, evidence, confidence, verification });
+      found.push({ selector, semanticType, recipe, evidence, confidence, verification, provenance });
     };
     document.querySelectorAll('[role="tablist"]').forEach((root) => {
       const tabs = [...root.querySelectorAll('[role="tab"]')];
@@ -115,7 +104,22 @@ export async function discoverInteractionPlan(page, { designMode = 'reference', 
       if (track && duplicate) add(root, 'marquee', 'marquee', ['clipped moving track with duplicate content']);
     });
     document.querySelectorAll('[data-hover-contract]').forEach((root) => add(root, 'hover', 'hover-reveal', ['explicit data-hover-contract annotation']));
-    document.querySelectorAll('[data-scroll-story], [data-motion-sample]').forEach((root) => add(root, 'scroll-story', 'scroll-story', ['explicit scroll/motion sampling annotation']));
+    const motionAnnotations = [
+      ['[data-scroll-story], [data-motion-sample]', 'scroll-story', 'scroll-story'],
+      ['[data-scroll-reveal]', 'scroll-reveal', 'scroll-reveal'],
+      ['[data-scroll-header]', 'scroll-header-state', 'scroll-header-state'],
+      ['[data-pin-scrub]', 'pin-scrub', 'pin-scrub-track'],
+      ['[data-scene-transition]', 'scene-transition', 'scene-transition'],
+      ['[data-split-text-reveal]', 'split-text-reveal', 'split-text-reveal'],
+      ['[data-horizontal-pin-scroll]', 'horizontal-pin-scroll', 'horizontal-pin-scroll'],
+      ['[data-parallax]', 'parallax', 'parallax'],
+      ['[data-pointer-reactive]', 'pointer-reactive', 'pointer-reactive']
+    ];
+    motionAnnotations.forEach(([selector, semanticType, recipe]) => document.querySelectorAll(selector).forEach((root) => add(root, semanticType, recipe, [`explicit ${recipe} source annotation`], 'high', {}, 'source-annotation')));
+    document.querySelectorAll('[data-motion-recipe]').forEach((root) => {
+      const recipe = root.getAttribute('data-motion-recipe');
+      add(root, root.getAttribute('data-semantic-type') || recipe, recipe, [`explicit data-motion-recipe=${recipe}`], 'high', {}, 'source-annotation');
+    });
     return found;
   });
   const normalized = candidates.map((candidate, index) => ({
@@ -124,11 +128,11 @@ export async function discoverInteractionPlan(page, { designMode = 'reference', 
     semanticType: candidate.semanticType,
     intent: candidate.semanticType === 'carousel' ? 'navigate-media' : candidate.semanticType === 'marquee' ? 'continuous-content' : 'change-semantic-state',
     evidence: candidate.evidence,
-    provenance: 'dom-affordance',
+    provenance: candidate.provenance,
     confidence: candidate.confidence,
     implementation: candidate.confidence === 'high' ? 'required' : candidate.confidence === 'medium' ? 'conservative' : 'skip',
     recipe: candidate.recipe,
-    requiredStates: requiredStatesFor(candidate.semanticType),
+    requiredStates: requiredStatesFor(candidate.recipe),
     responsiveBehavior: candidate.semanticType === 'hover' ? 'Essential content remains visible or tap-accessible without hover.' : 'Preserve semantic state and reachable controls at mobile width.',
     reducedMotionBehavior: ['marquee', 'scroll-story'].includes(candidate.semanticType) ? 'Stop continuous/scrub motion and expose a safe readable state.' : 'Preserve state behavior without decorative transition.',
     verification: candidate.verification
@@ -137,7 +141,7 @@ export async function discoverInteractionPlan(page, { designMode = 'reference', 
     version: 1,
     generatedAt: new Date().toISOString(),
     designMode,
-    motionLanguage: designMode === 'design' ? (motionLanguage || { character: 'restrained', pace: 'moderate', preferredFamilies: [], bannedFamilies: ['generic-card-lift', 'all-sections-fade-up'] }) : null,
+    motionLanguage: designMode === 'design' ? (motionLanguage || { character: 'restrained', pace: 'moderate', preferredFamilies: [], bannedFamilies: ['generic-card-lift', 'all-sections-fade-up'], sectionEntryVariation: 'section intent에 따라 2~4개 family 안에서 변주', pointerUsage: 'semantic affordance가 있는 요소에만 제한', continuousMotionUsage: '희소하게 사용하고 정보 전달을 방해하지 않음', scrollStory: '내용의 순차 이해에 필요한 경우만 사용' }) : null,
     sourceRoot: path.resolve(sourceRoot),
     sourceFingerprint: createSourceFingerprint(sourceRoot),
     candidates: normalized

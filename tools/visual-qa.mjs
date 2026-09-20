@@ -57,7 +57,7 @@ function connectedRegions(diff, maxRegions = 12) {
   const { width, height, data } = diff;
   const visited = new Uint8Array(width * height);
   const regions = [];
-  // The input is pixelmatch's diffMask output: only counted differences have alpha.
+  // pixelmatch의 diffMask만 입력하므로 실제 판정에 포함된 픽셀만 alpha를 가진다.
   const isMismatch = (x, y) => {
     const i = (y * width + x) * 4;
     return data[i + 3] !== 0;
@@ -176,7 +176,7 @@ async function main() {
     const comparisonOptions = { threshold: Number(args.threshold || 0.1), includeAA: false };
     if (dimensionMatch) {
       mismatchPixels = pixelmatch(reference.data, actual.data, diff.data, actual.width, actual.height, comparisonOptions);
-      // Keep the human-readable diff output, but use pixelmatch's actual mask for decisions.
+      // 사람이 보는 diff는 유지하되 판정에는 pixelmatch의 실제 mismatch mask를 사용한다.
       pixelmatch(reference.data, actual.data, mismatchMask.data, actual.width, actual.height, { ...comparisonOptions, diffMask: true });
     } else { diff.data.fill(255); mismatchMask.data.fill(255); }
     writePng(diffPath, diff);
@@ -218,7 +218,7 @@ async function main() {
     const visualStatus = dimensionMatch && failureReasons.length === 0 ? 'PASS' : 'FAIL';
     let interaction = { required: false, status: 'NOT_RUN' };
     if (!args['no-interaction-qa']) {
-      // Use a fresh page so click checks cannot alter the stable screenshot page.
+      // 클릭 검사가 안정화된 screenshot page를 바꾸지 않도록 새 page에서 실행한다.
       const interactionPage = await context.newPage();
       await interactionPage.goto(url, { waitUntil: 'load' });
       await waitForStablePage(interactionPage);
@@ -234,7 +234,7 @@ async function main() {
       geometryRequired: Boolean(args['require-geometry']),
       responsiveRequired: Boolean(args['require-responsive']),
       interactionPlanRequired: Boolean(args['interaction-plan']),
-      motionRequired: Boolean(args['require-motion']) || interaction.checks?.some((check) => check.status === 'DEFERRED') || false
+      motionRequired: Boolean(args['require-motion']) || interaction.motionRequired || false
     };
     const report = {
       generatedAt: new Date().toISOString(), captureMode, reference: { path: referencePath, width: reference.width, height: reference.height }, actual: { path: actualPath, width: actual.width, height: actual.height },

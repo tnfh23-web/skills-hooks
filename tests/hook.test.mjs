@@ -11,18 +11,24 @@ const staleDir = path.join(root, 'work', 'qa-contract', 'stale');
 const interactionStaleDir = path.join(root, 'work', 'qa-contract', 'interaction-stale');
 const canonicalDir = path.join(root, 'work', 'qa-contract', 'canonical');
 const motionStaleDir = path.join(root, 'work', 'qa-contract', 'motion-stale');
+const geometryStaleDir = path.join(root, 'work', 'qa-contract', 'geometry-stale');
+const responsiveStaleDir = path.join(root, 'work', 'qa-contract', 'responsive-stale');
 const missingEvidenceDir = path.join(root, 'work', 'qa-contract', 'missing-evidence');
 fs.rmSync(interactionFailDir, { recursive: true, force: true });
 fs.rmSync(staleDir, { recursive: true, force: true });
 fs.rmSync(interactionStaleDir, { recursive: true, force: true });
 fs.rmSync(canonicalDir, { recursive: true, force: true });
 fs.rmSync(motionStaleDir, { recursive: true, force: true });
+fs.rmSync(geometryStaleDir, { recursive: true, force: true });
+fs.rmSync(responsiveStaleDir, { recursive: true, force: true });
 fs.rmSync(missingEvidenceDir, { recursive: true, force: true });
 fs.mkdirSync(path.join(interactionFailDir, 'qa'), { recursive: true });
 fs.mkdirSync(path.join(staleDir, 'qa'), { recursive: true });
 fs.mkdirSync(path.join(interactionStaleDir, 'qa'), { recursive: true });
 fs.mkdirSync(path.join(canonicalDir, 'qa'), { recursive: true });
 fs.mkdirSync(path.join(motionStaleDir, 'qa'), { recursive: true });
+fs.mkdirSync(path.join(geometryStaleDir, 'qa'), { recursive: true });
+fs.mkdirSync(path.join(responsiveStaleDir, 'qa'), { recursive: true });
 fs.mkdirSync(path.join(missingEvidenceDir, 'qa'), { recursive: true });
 fs.copyFileSync(path.join(passDir, 'qa', 'report.json'), path.join(interactionFailDir, 'qa', 'report.json'));
 fs.copyFileSync(path.join(passDir, 'qa', 'actual.png'), path.join(interactionFailDir, 'qa', 'actual.png'));
@@ -82,9 +88,20 @@ const motionStale = run(motionStaleDir);
 assert.equal(motionStale.continue, false);
 assert.match(motionStale.stopReason, /motion.*stale|stale.*motion/i);
 
+for (const [gate, directory, reportName] of [['geometryRequired', geometryStaleDir, 'geometry-report.json'], ['responsiveRequired', responsiveStaleDir, 'responsive-report.json']]) {
+  for (const name of ['report.json', 'actual.png', 'diff.png', 'interaction-report.json']) fs.copyFileSync(path.join(passDir, 'qa', name), path.join(directory, 'qa', name));
+  const gatedVisual = JSON.parse(fs.readFileSync(path.join(directory, 'qa', 'report.json'), 'utf8'));
+  gatedVisual.qualityGates[gate] = true;
+  fs.writeFileSync(path.join(directory, 'qa', 'report.json'), `${JSON.stringify(gatedVisual, null, 2)}\n`);
+  fs.writeFileSync(path.join(directory, 'qa', reportName), `${JSON.stringify({ status: 'PASS', sourceRoot: gatedVisual.sourceRoot, sourceFingerprint: { ...gatedVisual.sourceFingerprint, value: `stale-${gate}` }, failureReasons: [] }, null, 2)}\n`);
+  const result = run(directory);
+  assert.equal(result.continue, false);
+  assert.match(result.stopReason, new RegExp(`${gate.replace('Required', '')}.*stale|stale.*${gate.replace('Required', '')}`, 'i'));
+}
+
 for (const name of ['report.json', 'actual.png', 'diff.png', 'interaction-report.json']) fs.copyFileSync(path.join(passDir, 'qa', name), path.join(missingEvidenceDir, 'qa', name));
 const evidencePlanPath = path.join(missingEvidenceDir, 'interaction-plan.json');
-fs.writeFileSync(evidencePlanPath, `${JSON.stringify({ version: 1, designMode: 'reference', motionLanguage: null, candidates: [{ id: 'missing-high', selector: '#control', semanticType: 'tabs', intent: 'test', evidence: ['explicit test'], provenance: 'annotation', confidence: 'high', implementation: 'required', recipe: 'tabs', requiredStates: ['selected-tab'], responsiveBehavior: 'preserve controls', reducedMotionBehavior: 'preserve state', verification: {} }] }, null, 2)}\n`);
+fs.writeFileSync(evidencePlanPath, `${JSON.stringify({ version: 1, designMode: 'reference', motionLanguage: null, candidates: [{ id: 'missing-high', selector: '#control', semanticType: 'tabs', intent: 'test', evidence: ['explicit test'], provenance: 'source-annotation', confidence: 'high', implementation: 'required', recipe: 'tabs', requiredStates: ['selected-tab', 'visible-panel'], responsiveBehavior: 'preserve controls', reducedMotionBehavior: 'preserve state', verification: {} }] }, null, 2)}\n`);
 const evidenceVisual = JSON.parse(fs.readFileSync(path.join(missingEvidenceDir, 'qa', 'report.json'), 'utf8'));
 evidenceVisual.qualityGates.interactionPlanRequired = true; evidenceVisual.interactionPlan = evidencePlanPath;
 fs.writeFileSync(path.join(missingEvidenceDir, 'qa', 'report.json'), `${JSON.stringify(evidenceVisual, null, 2)}\n`);

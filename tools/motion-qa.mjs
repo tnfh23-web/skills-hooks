@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createSourceFingerprint } from './source-fingerprint.mjs';
 import { readInteractionPlan } from './interaction-plan.mjs';
+import { INTERACTION_CATEGORIES, patternForCandidate } from './interaction-patterns.mjs';
 
 function parseArgs(argv) {
   const args = {};
@@ -99,6 +100,7 @@ async function inspectScrollStory(page, candidate) {
         const root = document.querySelector(candidate.selector);
         const sample = document.querySelector(candidate.verification?.sampleSelector || candidate.selector);
         const essential = candidate.verification?.essentialSelector ? document.querySelector(candidate.verification.essentialSelector) : sample;
+        if (!sample || !essential) return { progress, missing: true, essentialVisible: false, pageOverflow: false, pinPosition: null };
         const style = getComputedStyle(sample); const rect = sample.getBoundingClientRect(); const essentialStyle = getComputedStyle(essential); const essentialRect = essential.getBoundingClientRect();
         return {
           progress,
@@ -115,8 +117,11 @@ async function inspectScrollStory(page, candidate) {
     const changed = new Set(signatures).size >= 3;
     const finalSafe = samples.at(-1).essentialVisible && !samples.at(-1).pageOverflow;
     const pinReleased = !candidate.verification?.pinSelector || !['fixed', 'sticky'].includes(samples.at(-1).pinPosition);
-    const pass = errors.length === 0 && changed && finalSafe && pinReleased;
-    return { status: pass ? 'PASS' : 'FAIL', samples, runtimeErrors: errors, evidence: { triggerReachable: range.start <= range.documentHeight, changed, finalSafe, pinReleased }, failureReason: pass ? null : errors.length ? `Runtime error: ${errors.join('; ')}` : !changed ? 'Start, intermediate, and final samples did not produce distinct states.' : !finalSafe ? 'Final state hides essential content or leaves horizontal overflow.' : 'Pinned state did not release at the final sample.' };
+    const expectedStates = candidate.verification?.expectedStates || [];
+    const observedStates = samples.map((sample) => sample.state).filter((state) => state !== null && state !== undefined).map(String);
+    const expectedStatesCovered = expectedStates.length === 0 || expectedStates.every((expected) => observedStates.includes(String(expected)));
+    const pass = errors.length === 0 && changed && finalSafe && pinReleased && expectedStatesCovered;
+    return { status: pass ? 'PASS' : 'FAIL', samples, runtimeErrors: errors, evidence: { triggerReachable: range.start <= range.documentHeight, changed, finalSafe, pinReleased, expectedStates, observedStates, expectedStatesCovered }, failureReason: pass ? null : errors.length ? `Runtime error: ${errors.join('; ')}` : !changed ? 'Start, intermediate, and final samples did not produce distinct states.' : !finalSafe ? 'Final state hides essential content or leaves horizontal overflow.' : !pinReleased ? 'Pinned state did not release at the final sample.' : 'Configured expected states were not all observed.' };
   } finally {
     page.off('pageerror', onPageError); page.off('console', onConsole);
   }
@@ -124,31 +129,37 @@ async function inspectScrollStory(page, candidate) {
 
 export async function runMotionQa({ url, output, planPath, sourceRoot = process.cwd(), width = 1440, height = 900 }) {
   const plan = readInteractionPlan(planPath);
-  const candidates = plan.candidates.filter((candidate) => candidate.implementation !== 'skip' && ['marquee', 'scroll-story'].includes(candidate.semanticType));
+  const candidates = plan.candidates.filter((candidate) => candidate.implementation !== 'skip' && patternForCandidate(candidate)?.verifier === 'motion-qa');
   const browser = await chromium.launch({ headless: true }); const checks = [];
   try {
     const context = await browser.newContext({ viewport: { width, height } }); const page = await context.newPage(); await page.goto(fileUrl(url), { waitUntil: 'load' });
     for (const candidate of candidates) {
-      if (candidate.semanticType === 'marquee') {
+      const route = patternForCandidate(candidate);
+      const routing = { category: route.category, verifier: route.verifier, automation: route.automation, layer: route.layer };
+      if (candidate.recipe === 'marquee') {
         const result = await inspectMarquee(page, candidate);
         const reducedContext = await browser.newContext({ viewport: { width, height }, reducedMotion: 'reduce' }); const reducedPage = await reducedContext.newPage(); await reducedPage.goto(fileUrl(url), { waitUntil: 'load' });
         const reducedMotion = await inspectReducedMotion(reducedPage, candidate); await reducedContext.close();
         const status = result.status === 'PASS' && reducedMotion.safe ? 'PASS' : 'FAIL';
-        checks.push({ candidateId: candidate.id, type: candidate.semanticType, ...result, status, reducedMotion, failureReason: status === 'PASS' ? null : result.failureReason || 'Reduced-motion mode does not stop motion while preserving essential content.' });
-      } else {
+        checks.push({ candidateId: candidate.id, type: candidate.semanticType, recipe: candidate.recipe, routing, ...result, status, reducedMotion, failureReason: status === 'PASS' ? null : result.failureReason || 'Reduced-motion mode does not stop motion while preserving essential content.' });
+      } else if (route.category === INTERACTION_CATEGORIES.SCROLL_MOTION && route.automation === 'contract' && candidate.verification?.sampleSelector) {
         const result = await inspectScrollStory(page, candidate);
         const reducedContext = await browser.newContext({ viewport: { width, height }, reducedMotion: 'reduce' }); const reducedPage = await reducedContext.newPage(); await reducedPage.goto(fileUrl(url), { waitUntil: 'load' });
         const reducedMotion = await inspectReducedScroll(reducedPage, candidate); await reducedContext.close();
         const status = result.status === 'PASS' && reducedMotion.safe ? 'PASS' : 'FAIL';
-        checks.push({ candidateId: candidate.id, type: candidate.semanticType, ...result, status, reducedMotion, failureReason: status === 'PASS' ? null : result.failureReason || 'Reduced-motion mode does not expose a stable safe state.' });
+        checks.push({ candidateId: candidate.id, type: candidate.semanticType, recipe: candidate.recipe, routing, ...result, status, reducedMotion, failureReason: status === 'PASS' ? null : result.failureReason || 'Reduced-motion mode does not expose a stable safe state.' });
+      } else {
+        checks.push({ candidateId: candidate.id, type: candidate.semanticType, recipe: candidate.recipe, routing, status: 'DEFERRED', samples: [], evidence: { clicked: false, verifier: 'motion-qa' }, failureReason: route.automation === 'contract' ? 'A deterministic motion sample contract is required before this recipe can be verified.' : `Automated verification for ${candidate.recipe} is deferred.` });
       }
     }
     await context.close();
   } finally { await browser.close(); }
   const failures = checks.filter((check) => check.status === 'FAIL');
+  const deferred = checks.filter((check) => check.status === 'DEFERRED');
   const report = {
     generatedAt: new Date().toISOString(), sourceRoot: path.resolve(sourceRoot), sourceFingerprint: createSourceFingerprint(sourceRoot), plan: path.resolve(planPath),
-    required: candidates.length > 0, status: failures.length ? 'FAIL' : candidates.length ? 'PASS' : 'NOT_REQUIRED', checks,
+    required: candidates.length > 0, status: failures.length ? 'FAIL' : deferred.length ? 'DEFERRED' : candidates.length ? 'PASS' : 'NOT_REQUIRED', checks,
+    deferredReasons: deferred.map((check) => `${check.candidateId}: ${check.failureReason}`),
     failureReasons: failures.map((failure) => `${failure.candidateId}: ${failure.failureReason}`)
   };
   fs.mkdirSync(path.dirname(output), { recursive: true }); fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`); return report;
@@ -158,7 +169,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.url || !args.plan) throw new Error('Both --url and --plan are required.');
   const report = await runMotionQa({ url: args.url, planPath: path.resolve(args.plan), output: path.resolve(args.output || 'qa/motion-report.json'), sourceRoot: args['source-root'] || process.cwd(), width: Number(args.width || 1440), height: Number(args.height || 900) });
-  process.exitCode = report.status === 'FAIL' ? 1 : 0;
+  process.exitCode = ['PASS', 'NOT_REQUIRED'].includes(report.status) ? 0 : 1;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) main().catch((error) => { console.error(error.stack || error.message); process.exitCode = 1; });

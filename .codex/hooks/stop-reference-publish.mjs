@@ -84,6 +84,7 @@ for (const gate of [
       emit({ continue: false, stopReason: `Required ${gate.label} verification failed.`, systemMessage: `Fix ${gate.label} QA failures in ${gate.file} before completion.` });
       process.exit(0);
     }
+    assertFresh(gateReport, gate.label);
   } catch (error) {
     emit({ continue: false, stopReason: `The ${gate.label} verification report is not valid JSON.`, systemMessage: `Fix ${gate.file} and run verification again. ${error.message}` });
     process.exit(0);

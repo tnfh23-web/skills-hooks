@@ -1,55 +1,32 @@
 ---
 name: reference-publish
-description: Build and verify a web interface from a static design reference using a measured Chromium visual-QA repair loop. Use when the user provides a design screenshot, local assets/fonts, or asks for screenshot-faithful publishing. Do not use for general web work without a visual reference.
+description: 정적 디자인 레퍼런스를 실제 픽셀 좌표로 측정하고 Chromium 시각 QA 반복을 통해 충실한 웹 인터페이스를 구현한다.
 ---
 
-# Reference publishing V1
+# 레퍼런스 퍼블리싱 V1
 
-Reconstruct the intended web interface while preserving reference fidelity. The reference is a state of a real website, not a reason to invent a new design.
+레퍼런스는 새 디자인의 영감이 아니라 구현할 실제 웹 상태다.
 
-## Required loop
+## 필수 반복
 
-1. **SEE** — inspect the reference, available local assets, fonts, and any existing page before coding.
-2. **INFER** — implement only interactions that are clear or strongly implied by visible affordances. If evidence is absent, do not invent behavior. Before coding, create `work/reference-spec.json` with reference pixel dimensions, capture mode, viewport dimensions, sections, asset inventory, typography/fallback notes, and major elements. Prefer source-provided bounds; otherwise use `npm run qa:measure` and lower confidence only where deterministic measurement is unavailable. Once the static build is stable, automatically enter the `interaction-ready` phase: discover evidence, review the single `work/interaction-plan.json`, route patterns, and verify them.
-3. **BUILD** — implement HTML/CSS/JS using local resources first. Match typography, wrapping, dimensions, spacing, crop, positioning, color, borders, radius, alignment, and z-order. Exact pixel corrections are acceptable.
-4. **CAPTURE** — run the repository Visual QA command against a fixed Chromium viewport. Choose `viewport` for a single-screen reference or `fullPage` for a long document reference. It waits for fonts, images, and layout stability and disables motion for the comparison capture. A long reference image does not become the browser viewport height.
-5. **COMPARE / DIAGNOSE** — inspect `qa/report.json`, `qa/actual.png`, and `qa/diff.png`. Use the reported largest mismatch regions and DOM labels to choose one high-impact cause. Compare reference pixel coordinates to Chromium document coordinates with `npm run qa:geometry`; it records `dx/dy/dw/dh` and only non-null typography expectations are asserted. Use `npm run qa:responsive` at 1024×768 and 390×844 for structural checks; internal carousel overflow is exempt when it is part of the existing slider structure.
-6. **REPAIR** — change the smallest related scope, then capture and compare again. Record before/after mismatch numbers when useful. Do not rewrite the whole page because one region is wrong.
-7. **VERIFY** — run visual QA again after the final change. If interactive controls are present, run semantic Interaction QA. Run Motion QA separately for continuous/scroll candidates so a motion-disabled screenshot is never mistaken for motion verification.
+1. **보기** — 레퍼런스, 로컬 asset/font, 기존 페이지를 먼저 조사한다.
+2. **측정/추론** — `work/reference-spec.json`에 reference dimensions, capture mode, viewport, section, asset, typography, 주요 bounds를 기록한다. source bounds를 우선하고 없으면 `npm run qa:measure`를 사용한다. 자동 측정 불가 항목만 낮은 confidence의 시각 추정을 허용한다.
+3. **구현** — 로컬 리소스로 typography, wrapping, 크기, 간격, crop, 위치, 색, border, radius, 정렬, z-order를 맞춘다.
+4. **캡처** — 단일 화면은 `viewport`, 긴 문서는 `fullPage`를 사용한다. 긴 reference 높이를 viewport 높이로 바꾸지 않는다.
+5. **비교/진단** — `qa/report.json`, `actual.png`, `diff.png`와 Geometry QA의 `dx/dy/dw/dh`로 가장 큰 원인을 찾는다.
+6. **수정** — 가장 작은 관련 범위를 고치고 다시 캡처한다.
+7. **검증** — 최종 Visual QA 뒤 상호작용이 있으면 `interaction-ready` 단계로 들어가 plan을 만들고 Interaction/Motion QA를 분리 실행한다.
 
-## Interaction inference
+## 시각 QA 계약
 
-- Clear affordance: implement it.
-- Strongly implied by arrows, pagination, active states, clipped repeated content, hamburger, plus/minus, thumbnails, or similar cues: implement the most natural minimal web behavior.
-- No evidence: do not add a feature merely because it is common.
-- Give visible controls natural hover, focus-visible, and active states derived from the reference language. Avoid generic lift, glow, scale, or identical easing everywhere.
+reference와 actual은 width/height가 정확히 같아야 한다. dimension mismatch는 즉시 FAIL이며 reference를 resize해 숨기지 않는다. 작은 mismatch ratio라도 큰 의미 영역이 남으면 FAIL할 수 있다. AA noise는 실제 mismatch mask에서 제외하지만 사람이 보는 diff는 유지한다.
 
-## Visual QA contract
+`fullPage`에서도 브라우저는 지정 viewport로 렌더되고 screenshot만 문서 전체를 캡처한다. `report.json`은 reference, viewport, document, actual dimensions와 capture mode를 기록한다. `work/reference-spec.json`은 document 기준 reference pixel 좌표를 유지한다.
 
-Run:
+## 상호작용 계약
 
-```powershell
-npm run qa -- --reference path/to/reference.png --url http://127.0.0.1:3000/ --output qa
-```
+명확한 affordance만 구현한다. state interaction은 클릭 전후 semantic state를 검사한다. continuous/scroll/pointer motion 후보는 generic click fallback으로 보내지 않고 Motion QA에 라우팅한다. 계약이 없으면 deferred, 지원 밖이면 unsupported로 기록한다.
 
-Use `--capture-mode viewport` (the default) for a one-screen reference, or `--capture-mode fullPage` with `--width` and `--height` set to the browser viewport for a long reference:
+## 완료 gate
 
-```powershell
-npm run qa -- --capture-mode fullPage --reference path/to/long-reference.png --url http://127.0.0.1:3000/ --width 1920 --height 1080 --output qa
-```
-
-The reference and actual capture must have exactly the same width and height. A dimension mismatch is a FAIL; never resize the reference to hide it. In `fullPage` mode, the page still renders in the configured viewport and only the screenshot extends to the document height. The runner records reference, viewport, document, actual screenshot dimensions, and `captureMode`. It writes `qa/actual.png`, `qa/diff.png`, `qa/overlay.png`, `qa/mask.png`, and `qa/report.json`.
-
-`report.json` is evidence, not an opinion. It contains dimensions, mismatch pixel count/ratio, largest regions, DOM overlap hints, the tolerance decision and observed threshold values, status, and human-readable failure reasons. Matching dimensions are mandatory; a small mismatch ratio can PASS only when no meaningful/large region exceeds the per-region tolerance. Treat antialiasing noise as low-value only when the artifacts and numbers support that conclusion; do not self-declare PASS.
-
-`work/reference-spec.json` stays in reference pixel space. Do not fill bounds with visual guesses when a deterministic PNG/source measurement is available. For full-page references, preserve document `y` coordinates; never turn the reference height into the browser viewport height.
-
-For pages with clearly detectable controls, the runner performs low-risk focus/hover checks, clicks stateful tabs, summaries, `aria-expanded` toggles, and marked pagination/slider/menu controls, then compares observable before/after state. It records the control type, click-before state, click-after state, status, and failure reason in `qa/interaction-report.json`. Navigation links are treated as successful navigation and are not forced into a same-page state assertion. Use `--no-interaction-qa` only when the page has no required interaction and document that choice in the task summary.
-
-## Stop gate
-
-Before saying the task is complete, ensure the latest `qa/report.json` is PASS and, when interaction QA is required, `qa/interaction-report.json` is PASS. When `qualityGates.geometryRequired` or `qualityGates.responsiveRequired` is true, the corresponding reports must also be PASS. The source fingerprint must match the latest report. If a gate fails, inspect the artifacts, fix the largest remaining mismatch, and run verification again. In Codex app, reopen/reload or trust project hooks if needed, then run a hook smoke test before completion.
-
-## Controlled evolution from V1
-
-V1 correctly prohibited speculative agents and a large interaction recipe library. Repeated project corpus, benchmark evidence, semantic Interaction QA gaps, and the current workflow goal now justify one evidence-driven interaction phase. Scope remains controlled: no invented Codex subagent schema, router/state framework, memory subsystem, font/PSD/deploy expansion, CDN default, or large effect library. Planning and verification stay separable through `work/interaction-plan.json` and independent QA tools; only carousel-state and marquee are currently Dedicated Skills.
+필요한 Visual/Interaction/Motion/Geometry/Responsive 보고서가 PASS이고 현재 소스 지문과 일치해야 한다. Stop Hook은 객관적 증거만 검사하며 효과를 발명하지 않는다.

@@ -1,24 +1,25 @@
 ---
 name: interaction-design
-description: Discover and plan evidence-based interaction and motion after a static publishing baseline is stable. Use for reference-driven controls, interaction planning, or intentional DESIGN_MODE motion composition.
+description: 정적 기준선 이후 근거 기반 상호작용과 모션을 발견하고 분류하며 단일 interaction plan을 작성한다.
 ---
 
-# Interaction design
+# 상호작용 설계
 
-Decide **what** should interact, **why**, and which recipe fits. Do not become a snippet catalog.
+무엇이 왜 움직여야 하는지 결정한다. 코드 조각 모음이 아니다.
 
-## Modes and evidence
+## 모드와 근거
 
-- `reference`: reference state, annotation, or DOM affordance is authority. HIGH may be required; MEDIUM gets conservative semantic behavior; LOW must use `implementation: "skip"`. Never invent decorative motion.
-- `design`: derive one page-level motion language before selecting effects. Use two to four coherent families and state each purpose. Avoid generic card lift, repeated scale/shadow/glow, arbitrary arrows/pills, and all-sections fade-up.
+- `reference`: reference state, source annotation, DOM affordance가 권위다. HIGH는 required, MEDIUM은 conservative, LOW는 `skip`한다.
+- `design`: 효과 전에 페이지 단위 motion language를 정한다. 성격, 속도, 선호/금지 family, section entry 변주, pointer/continuous/scroll 원칙을 모두 기록한다.
 
-Run `npm run qa:interaction-plan -- --url <page> --mode reference|design --output work/interaction-plan.json`. Review the generated evidence; do not add a candidate without an observable fact. Keep `work/interaction-plan.json` as the only interaction SSOT.
+`npm run qa:interaction-plan -- --url <page> --mode reference|design --output work/interaction-plan.json`을 실행하고 근거를 검토한다. `work/interaction-plan.json`만 SSOT로 유지한다.
 
-## Routing
+## 라우팅
 
-- tabs, accordion, drawer: semantic recipes in the shared guide.
-- carousel with slide/counter/pagination/progress/thumbnail synchronization: use `carousel-state`.
-- duplicated continuous track: use `marquee`.
-- hover, reveal, scene, pin/scrub, parallax: keep as guide recipes until repeated benchmarks justify promotion.
+- 상태 전이: tabs, accordion, dropdown, drawer, menu, carousel → Interaction QA
+- 포인터: hover reveal은 Interaction QA, pointer reactive/cursor/speed는 Motion QA의 deferred
+- 지속 모션: marquee는 자동 Motion QA, 나머지는 계약 유무에 따라 deferred
+- 스크롤 모션: sample selector와 진행 상태 계약이 있으면 Motion QA, 없으면 deferred
+- advanced: canvas/WebGL은 현재 manual/unsupported
 
-Every candidate defines responsive and reduced-motion behavior plus a machine-checkable verification contract. Essential content may not depend on hover or JS animation to exist.
+전용 Skill은 carousel, marquee, pin/scrub, scene transition, split text reveal, horizontal pin scroll에만 둔다. 단순 reveal/parallax/ticker는 공통 recipe를 사용한다.

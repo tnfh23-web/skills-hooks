@@ -1,18 +1,18 @@
 ---
 name: interaction-ready
-description: Orchestrate interaction discovery, plan validation, pattern routing, semantic QA, motion QA, and final evidence gates for publishing work.
+description: 상호작용 발견, plan 검증, 패턴 라우팅, 의미 QA, 모션 QA, 최종 증거 gate를 순서대로 조율한다.
 ---
 
-# Interaction ready
+# 상호작용 준비 오케스트레이션
 
-This is an entry/orchestration Skill, not an implementation recipe.
+구현 recipe가 아니라 진입 순서를 관리하는 Skill이다.
 
-1. Confirm the static Visual QA baseline is stable enough that motion will not hide layout defects.
-2. Use `interaction-design` and generate/review `work/interaction-plan.json`.
-3. Validate it with `npm run qa:interaction-plan:validate -- --validate work/interaction-plan.json`.
-4. Apply `animation-guide`; route only carousel/marquee to their Dedicated Skills.
-5. Run Visual QA with `--interaction-plan work/interaction-plan.json --set-latest`; add `--require-motion` when the plan contains marquee or scroll-story.
-6. Run semantic Interaction QA and Motion QA separately. Then run required Geometry/Responsive QA.
-7. The Stop Hook owns only objective completion: canonical reports, PASS statuses, fingerprints, plan validity, and evidence for HIGH candidates.
+1. 정적 Visual QA 기준선이 안정됐는지 확인한다.
+2. `interaction-design`으로 후보를 발견하고 `work/interaction-plan.json`을 검토한다.
+3. `npm run qa:interaction-plan:validate -- --validate work/interaction-plan.json`으로 검증한다.
+4. `tools/interaction-patterns.mjs` 레지스트리에 따라 공통 recipe 또는 전용 Skill로 보낸다.
+5. Visual QA에 `--interaction-plan ... --set-latest`를 사용하고 모션 후보가 있으면 Motion QA를 실행한다.
+6. Interaction/Motion/Geometry/Responsive QA를 필요한 범위에서 각각 실행한다.
+7. Stop Hook은 PASS, 지문 최신성, plan 유효성, HIGH 후보 검증 증거만 판정한다.
 
-No interactive candidates is valid. An intentionally skipped LOW reference candidate is valid. The hook never chooses an effect.
+후보가 없는 것도 유효하고 REFERENCE_MODE의 LOW 후보를 의도적으로 skip하는 것도 유효하다. Motion QA 계약이 없는 후보는 deferred이지 PASS가 아니다.

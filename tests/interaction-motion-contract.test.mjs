@@ -5,6 +5,7 @@ import { chromium } from 'playwright';
 import { discoverInteractionPlan, validateInteractionPlan } from '../tools/interaction-plan.mjs';
 import { runInteractionQa } from '../tools/interaction-qa.mjs';
 import { runMotionQa } from '../tools/motion-qa.mjs';
+import { assertPatternRegistry, PATTERN_REGISTRY } from '../tools/interaction-patterns.mjs';
 
 const root = process.cwd();
 const out = path.join(root, 'work', 'interaction-motion-contract');
@@ -13,12 +14,14 @@ const fixture = (name) => path.join(root, 'tests', 'fixtures', name);
 const fileUrl = (file) => new URL(`file://${file.replaceAll('\\', '/')}`).href;
 
 function candidate(id, selector, semanticType, recipe, verification = {}) {
-  return { id, selector, semanticType, intent: 'contract-test', evidence: ['explicit fixture contract'], provenance: 'annotation', confidence: 'high', implementation: 'required', recipe, requiredStates: ['rest', 'active'], responsiveBehavior: 'Preserve reachable semantic controls on mobile.', reducedMotionBehavior: 'Preserve state while removing decorative motion.', verification };
+  return { id, selector, semanticType, intent: 'contract-test', evidence: ['explicit fixture contract'], provenance: 'source-annotation', confidence: 'high', implementation: 'required', recipe, requiredStates: PATTERN_REGISTRY[recipe]?.requiredStates || ['rest', 'active'], responsiveBehavior: 'Preserve reachable semantic controls on mobile.', reducedMotionBehavior: 'Preserve state while removing decorative motion.', verification };
 }
 function plan(candidates = [], designMode = 'reference') {
-  return { version: 1, designMode, motionLanguage: designMode === 'design' ? { character: 'editorial', pace: 'moderate', preferredFamilies: ['scene'], bannedFamilies: ['all-sections-fade-up'] } : null, candidates };
+  return { version: 1, designMode, motionLanguage: designMode === 'design' ? { character: 'editorial', pace: 'moderate', preferredFamilies: ['scene'], bannedFamilies: ['all-sections-fade-up'], sectionEntryVariation: 'section intent에 따라 변주', pointerUsage: 'affordance에만 사용', continuousMotionUsage: '정보를 방해하지 않게 제한', scrollStory: '순차 이해에 필요한 경우만 사용' } : null, candidates };
 }
 
+assert.deepEqual(assertPatternRegistry(), { valid: true, errors: [] });
+for (const [recipe, route] of Object.entries(PATTERN_REGISTRY)) assert.ok(route.verifier && route.automation && route.category, `${recipe} must have one complete verifier route`);
 const valid = plan([candidate('tabs', '#tabs', 'tabs', 'tabs')]);
 assert.equal(validateInteractionPlan(valid).valid, true);
 assert.equal(validateInteractionPlan(plan([{ ...valid.candidates[0], selector: '' }])).valid, false, 'invalid candidate must fail');
@@ -65,11 +68,32 @@ try {
   const staticContext = await browser.newContext({ viewport: { width: 800, height: 600 } }); const staticPage = await staticContext.newPage(); await staticPage.setContent('<main><h1>Static page</h1></main>');
   const staticReport = await runInteractionQa({ page: staticPage, output: path.join(out, 'static.json'), plan: plan([]), sourceRoot: root });
   assert.equal(staticReport.status, 'NOT_REQUIRED'); await staticContext.close();
+
+  const routedContext = await browser.newContext({ viewport: { width: 1000, height: 800 } }); const routedPage = await routedContext.newPage(); await routedPage.goto(fileUrl(fixture('interaction-motion.html')), { waitUntil: 'load' });
+  const routedPlan = plan([
+    candidate('scene', '#story', 'scene-transition', 'scene-transition'),
+    candidate('reveal', '#story', 'scroll-reveal', 'scroll-reveal'),
+    candidate('advanced', '#story', 'canvas-interaction', 'canvas-interaction')
+  ]);
+  const routed = await runInteractionQa({ page: routedPage, output: path.join(out, 'routed.json'), plan: routedPlan, sourceRoot: root, checkMobile: false });
+  assert.equal(routed.status, 'NOT_REQUIRED');
+  for (const id of ['scene', 'reveal']) {
+    const check = routed.checks.find((item) => item.candidateId === id);
+    assert.equal(check.status, 'DEFERRED');
+    assert.equal(check.routing.verifier, 'motion-qa');
+    assert.equal(check.evidence.clicked, false, `${id} must not fall through to click QA`);
+  }
+  const unsupported = routed.checks.find((item) => item.candidateId === 'advanced');
+  assert.equal(unsupported.status, 'UNSUPPORTED');
+  assert.equal(unsupported.evidence.clicked, false);
+  await routedContext.close();
 } finally { await browser.close(); }
 
 const motionPlan = plan([
   candidate('marquee', '#marquee', 'marquee', 'marquee', { trackSelector: '[data-marquee-track]', originalSelector: '[data-marquee-original]', duplicateSelector: '[data-marquee-copy]' }),
-  candidate('story', '#story', 'scroll-story', 'scroll-story', { sampleSelector: '#story-sample', progressAttribute: 'data-progress', essentialSelector: '#story-sample' })
+  candidate('story', '#story', 'scroll-story', 'scroll-story', { sampleSelector: '#story-sample', progressAttribute: 'data-progress', essentialSelector: '#story-sample' }),
+  candidate('scene', '#story', 'scene-transition', 'scene-transition', { sampleSelector: '#story-sample', progressAttribute: 'data-progress', essentialSelector: '#story-sample' }),
+  candidate('reveal', '#story', 'scroll-reveal', 'scroll-reveal', { sampleSelector: '#story-sample', progressAttribute: 'data-progress', essentialSelector: '#story-sample' })
 ]);
 const motionPlanPath = path.join(out, 'motion-plan.json'); fs.writeFileSync(motionPlanPath, `${JSON.stringify(motionPlan, null, 2)}\n`);
 const motion = await runMotionQa({ url: fixture('interaction-motion.html'), output: path.join(out, 'motion.json'), planPath: motionPlanPath, sourceRoot: root, width: 1000, height: 800 });
@@ -78,5 +102,14 @@ assert.equal(motion.checks.find((item) => item.candidateId === 'marquee').reduce
 assert.equal(motion.checks.find((item) => item.candidateId === 'story').samples.length, 5);
 assert.equal(motion.checks.find((item) => item.candidateId === 'story').runtimeErrors.length, 0);
 assert.equal(motion.checks.find((item) => item.candidateId === 'story').reducedMotion.safe, true);
+assert.equal(motion.checks.find((item) => item.candidateId === 'scene').status, 'PASS');
+assert.equal(motion.checks.find((item) => item.candidateId === 'reveal').status, 'PASS');
 
-console.log('interaction plan, discovery, semantic interaction, responsive hover, marquee, and deterministic motion contracts: PASS');
+const deferredPlanPath = path.join(out, 'deferred-plan.json');
+fs.writeFileSync(deferredPlanPath, `${JSON.stringify(plan([candidate('pointer', '#hover-card', 'pointer-reactive', 'pointer-reactive')]), null, 2)}\n`);
+const deferredMotion = await runMotionQa({ url: fixture('interaction-motion.html'), output: path.join(out, 'deferred-motion.json'), planPath: deferredPlanPath, sourceRoot: root, width: 1000, height: 800 });
+assert.equal(deferredMotion.status, 'DEFERRED');
+assert.equal(deferredMotion.checks[0].status, 'DEFERRED');
+assert.equal(deferredMotion.checks[0].evidence.clicked, false);
+
+console.log('registry, interaction routing, semantic interaction, marquee, deterministic/deferred motion contracts: PASS');

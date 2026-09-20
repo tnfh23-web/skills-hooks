@@ -6,7 +6,9 @@ const IGNORED_TOP_LEVEL = new Set(['.git', '.agents', '.codex', 'node_modules', 
 
 function shouldIgnore(relativePath) {
   const parts = relativePath.split(/[\\/]/);
-  return parts.some((part) => part === '.git' || part === 'node_modules' || part === '.agents' || part === '.codex' || part === 'tools' || part === 'tests' || part === 'work' || part.startsWith('qa'));
+  const topLevel = parts[0];
+  const qaArtifactRoot = topLevel === 'qa' || /^qa[-_.].+$/i.test(topLevel);
+  return IGNORED_TOP_LEVEL.has(topLevel) || qaArtifactRoot;
 }
 
 export function sourceFiles(root) {
