@@ -5,6 +5,7 @@ import { chromium } from 'playwright';
 import { createSourceFingerprint } from './source-fingerprint.mjs';
 import { KNOWN_RECIPES, PATTERN_REGISTRY } from './interaction-patterns.mjs';
 import { collectActionableInventory } from './interaction-coverage.mjs';
+import { analyzeInteractionLanguage, authorInteractionCandidate, validateAuthoring } from './interaction-authoring.mjs';
 
 export { KNOWN_RECIPES } from './interaction-patterns.mjs';
 
@@ -27,6 +28,7 @@ export function validateInteractionPlan(plan) {
   if (!['reference', 'design'].includes(plan.designMode)) errors.push('designMode must be reference or design');
   if (!Array.isArray(plan.candidates)) errors.push('candidates must be an array');
   if (plan.coverage !== undefined && (!plan.coverage || !Array.isArray(plan.coverage.actionable))) errors.push('coverage.actionable must be an array when coverage is present');
+  if (plan.interactionLanguage !== undefined || (plan.candidates || []).some((candidate) => candidate?.authoring)) errors.push(...validateAuthoring(plan).errors);
   if (plan.designMode === 'design' && (!plan.motionLanguage || !plan.motionLanguage.character || !plan.motionLanguage.pace || !Array.isArray(plan.motionLanguage.preferredFamilies) || !Array.isArray(plan.motionLanguage.bannedFamilies) || !plan.motionLanguage.sectionEntryVariation || !plan.motionLanguage.pointerUsage || !plan.motionLanguage.continuousMotionUsage || !plan.motionLanguage.scrollStory)) {
     errors.push('DESIGN_MODE requires a complete motionLanguage contract');
   }
@@ -166,14 +168,22 @@ export async function discoverInteractionPlan(page, { designMode = 'reference', 
     verification: candidate.verification
   }));
   const actionable = await collectActionableInventory(page);
+  const interactionLanguage = await analyzeInteractionLanguage(page, { designMode });
+  const authored = normalized.map((candidate) => ({ ...candidate, authoring: authorInteractionCandidate(candidate, { designMode, interactionLanguage }) }));
   const plan = {
     version: 1,
     generatedAt: new Date().toISOString(),
     designMode,
     motionLanguage: designMode === 'design' ? (motionLanguage || { character: 'restrained', pace: 'moderate', preferredFamilies: [], bannedFamilies: ['generic-card-lift', 'all-sections-fade-up'], sectionEntryVariation: 'section intent에 따라 2~4개 family 안에서 변주', pointerUsage: 'semantic affordance가 있는 요소에만 제한', continuousMotionUsage: '희소하게 사용하고 정보 전달을 방해하지 않음', scrollStory: '내용의 순차 이해에 필요한 경우만 사용' }) : null,
+    interactionLanguage,
+    authoringPolicy: {
+      requiredBaseline: { requiredFeedback: ['hover', 'focus-visible', 'active/tap'] },
+      affordanceDriven: { requires: ['semanticType', 'intent', 'interactionFamily', 'primitive', 'behavior'] },
+      enhancedMotion: { requires: ['evidenceGate'], referenceMode: 'evidence-required' }
+    },
     sourceRoot: path.resolve(sourceRoot),
     sourceFingerprint: createSourceFingerprint(sourceRoot),
-    candidates: normalized,
+    candidates: authored,
     coverage: {
       policy: {
         actionableHover: 'required',

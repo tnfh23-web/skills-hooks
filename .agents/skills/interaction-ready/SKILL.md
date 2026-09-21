@@ -8,7 +8,7 @@ description: 상호작용 발견, plan 검증, 패턴 라우팅, 의미 QA, 모�
 구현 recipe가 아니라 진입 순서를 관리하는 Skill이다.
 
 1. 정적 Visual QA 기준선이 안정됐는지 확인한다.
-2. `interaction-design`으로 후보를 발견하고 `work/interaction-plan.json`을 검토한다.
+2. `interaction-design`으로 후보를 발견하고 `tools/interaction-authoring.mjs`가 만든 `interactionLanguage`와 candidate별 authoring(policy, intent, family, primitive)을 검토한 뒤 `work/interaction-plan.json`을 확정한다.
 3. `npm run qa:interaction-plan:validate -- --validate work/interaction-plan.json`으로 검증한다.
 4. `tools/interaction-patterns.mjs` 레지스트리에 따라 공통 recipe 또는 전용 Skill로 보낸다.
 5. 외부 target이면 모든 QA에 `--source-root <target-project>`를 명시하고, Visual QA에 `--interaction-plan ... --set-latest`를 사용한다. 모션 후보가 있으면 Motion QA를 실행한다.

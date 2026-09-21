@@ -5,7 +5,7 @@ description: 정적 기준선 이후 근거 기반 상호작용과 모션을 발
 
 # 상호작용 설계
 
-무엇이 왜 움직여야 하는지 결정한다. 코드 조각 모음이 아니다.
+무엇이 왜 움직여야 하는지 결정한다. 코드 조각 모음이 아니다. Discovery가 interactive 후보를 찾은 뒤 authoring은 semantic type → intent → interaction family → primitive 순서로 선택하며, corpus는 interaction vocabulary로 사용한다.
 
 ## 모드와 근거
 
@@ -13,6 +13,8 @@ description: 정적 기준선 이후 근거 기반 상호작용과 모션을 발
 - `design`: 효과 전에 페이지 단위 motion language를 정한다. 성격, 속도, 선호/금지 family, section entry 변주, pointer/continuous/scroll 원칙을 모두 기록한다.
 
 `npm run qa:interaction-plan -- --url <page> --mode reference|design --output work/interaction-plan.json`을 실행하고 근거를 검토한다. `work/interaction-plan.json`만 SSOT로 유지한다.
+
+생성된 plan에는 결정적 DOM 관찰에서 나온 `interactionLanguage`와 candidate별 `authoring` 계약이 있어야 한다. `required-baseline`은 hover/focus-visible/active-tap을 요구하고, `affordance-driven`은 보이는 control의 보수적 state behavior를 요구한다. `enhanced-motion`은 REFERENCE_MODE에서 충분한 evidence가 없으면 발명하지 않고 evidence gate를 기록한다.
 
 ## 라우팅
 

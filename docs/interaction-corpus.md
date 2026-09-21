@@ -1,6 +1,16 @@
 # 상호작용 코퍼스와 자동화 범위
 
-이 문서는 `tools/interaction-patterns.mjs`의 사람이 읽는 대응표다. 기계 판정의 SSOT는 레지스트리이며 문서와 테스트는 그것을 따라야 한다.
+이 문서는 `tools/interaction-patterns.mjs`의 사람이 읽는 대응표다. 기계 판정의 SSOT는 레지스트리이며 문서와 테스트는 그것을 따라야 한다. Authoring 단계에서는 이 corpus를 특정 사이트 효과의 복사 목록이 아니라 `semantic type → intent → interaction family → primitive → verification route`로 연결하는 interaction vocabulary로 사용한다.
+
+## Authoring 정책
+
+| 정책 | 대상 | authoring 계약 |
+|---|---|---|
+| `required-baseline` | link, button, nav, icon button, CTA | hover, focus-visible, active/tap feedback |
+| `affordance-driven` | tab, arrow, menu, search, carousel, state navigation | 보이는 affordance에 맞는 보수적 state behavior |
+| `enhanced-motion` | pin, scrub, parallax, split text, scene, pointer, horizontal scroll | Reference Mode에서는 명시적 source/reference/design evidence가 있을 때만 선택 |
+
+`tools/interaction-authoring.mjs`는 DOM의 typography, line, shape, image, density, contrast, motion cue를 결정적으로 관찰해 `interactionLanguage`를 만들고, 각 discovered candidate에 vocabulary family와 primitive를 기록한다. `global-scale-1.05`, `generic-card-lift`, `decorative-arrow-default`, `all-elements-opacity-only`는 기본 금지 목록이다.
 
 | Reference/Pattern | Category | Skill/Recipe | Verifier | 자동화 상태 |
 |---|---|---|---|---|
