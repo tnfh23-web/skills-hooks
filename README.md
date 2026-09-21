@@ -2,6 +2,57 @@
 
 정적 시안을 픽셀 좌표계로 측정하고 Chromium 결과와 비교하는 로컬 우선 퍼블리싱 워크플로다. 시안은 재설계 대상이 아니라 구현해야 할 웹 인터페이스 상태로 취급한다.
 
+## 작동 원리와 역할 구조
+
+```mermaid
+flowchart TD
+    INPUT["Reference 이미지 + local assets/fonts<br/>+ target project"] --> MAIN["Main Orchestrator<br/>전체 단계 조율"]
+
+    MAIN --> EXPLORE["Explorer<br/>소스·asset·기존 구조 조사"]
+    MAIN --> PLAN["Planner / Design Director<br/>측정·구조·interaction 계획"]
+    EXPLORE --> SPEC["reference-spec.json<br/>pixel bounds · viewport · capture mode"]
+    PLAN --> SPEC
+
+    SPEC --> STATIC["General UI Coder<br/>HTML · CSS · JS 정적 구현"]
+    STATIC --> STATIC_QA["Deterministic Static QA<br/>Visual · Geometry · Responsive"]
+    STATIC_QA --> STATIC_GATE{"정적 기준선 PASS?"}
+    STATIC_GATE -- "아니오" --> CRITIC["Verifier / Visual Critic<br/>가장 큰 mismatch와 false PASS 진단"]
+    CRITIC --> STATIC
+
+    STATIC_GATE -- "예" --> IPLAN["interaction-plan.json<br/>language · authoring · composition"]
+    IPLAN --> ROUTER{"semantic pattern routing"}
+    ROUTER --> STATE["General UI Coder<br/>tab · menu · carousel · state UI"]
+    ROUTER --> MOTION["Motion Coder + Dedicated Skills<br/>marquee · scroll · scene motion"]
+    STATE --> BEHAVIOR_QA["Interaction QA<br/>click 전후 semantic state 검증"]
+    MOTION --> MOTION_QA["Motion QA<br/>state sample · reduced motion 검증"]
+
+    BEHAVIOR_QA --> FINAL_REVIEW["Verifier / Visual Critic<br/>visual · icon · interaction 증거 검토"]
+    MOTION_QA --> FINAL_REVIEW
+    FINAL_REVIEW --> STOP{"Stop Hook<br/>required report PASS?<br/>source fingerprint 최신?"}
+    STOP -- "아니오" --> BLOCK["BLOCK<br/>완료 선언 차단"]
+    BLOCK --> DEBUG["Debugger<br/>재현·원인 진단"]
+    DEBUG --> MAIN
+    STOP -- "예" --> RELEASE["ALLOW<br/>검수·release 가능"]
+
+    classDef input fill:#eeecff,stroke:#8568ff,color:#17131f;
+    classDef agent fill:#dff2ff,stroke:#438ac7,color:#111827;
+    classDef artifact fill:#fff4cc,stroke:#c69a13,color:#211b08;
+    classDef qa fill:#d9f7ea,stroke:#16a36f,color:#09271c;
+    classDef gate fill:#eeeaff,stroke:#8066e8,color:#17131f;
+    classDef fail fill:#ffdede,stroke:#d93636,color:#4a0909;
+    classDef pass fill:#c9f3dc,stroke:#119b5f,color:#082b1b;
+
+    class INPUT input;
+    class MAIN,EXPLORE,PLAN,STATIC,STATE,MOTION,CRITIC,DEBUG agent;
+    class SPEC,IPLAN artifact;
+    class STATIC_QA,BEHAVIOR_QA,MOTION_QA,FINAL_REVIEW qa;
+    class STATIC_GATE,ROUTER,STOP gate;
+    class BLOCK fail;
+    class RELEASE pass;
+```
+
+Main은 순서와 범위를 조율하고, 에이전트 역할은 계획·구현·비평·진단을 나눠 맡는다. 실제 PASS/FAIL은 LLM의 주관적 선언이 아니라 Node/Playwright 기반 QA report와 현재 source fingerprint를 Stop Hook이 확인해 결정한다. FAIL 또는 stale evidence가 있으면 완료가 차단되고 해당 구현 단계로 돌아간다.
+
 ## 기본 흐름
 
 1. `npm run qa:measure -- --reference <reference.png> --output work/reference-measurement.json`으로 원본을 측정한다.
