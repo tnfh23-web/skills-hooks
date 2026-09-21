@@ -17,6 +17,10 @@ description: 정적 디자인 레퍼런스를 실제 픽셀 좌표로 측정하�
 6. **수정** — 가장 작은 관련 범위를 고치고 다시 캡처한다.
 7. **검증** — 최종 Visual QA 뒤 상호작용이 있으면 `interaction-ready` 단계로 들어가 plan을 만들고 Interaction/Motion QA를 분리 실행한다. Plan 기반 실행에서는 actionable hover/focus-visible/perceptibility/click coverage도 기록한다.
 
+## 신규 프로젝트 convention
+
+새 퍼블리싱 프로젝트를 생성할 때는 [프로젝트 구조·section naming·asset/SVG 규칙](references/project-conventions.md)을 읽고 적용한다. 이 convention은 신규 프로젝트의 기본값이며 기존 프로젝트를 자동 rename하거나 강제로 재구성하지 않는다.
+
 ## 시각 QA 계약
 
 reference와 actual은 width/height가 정확히 같아야 한다. dimension mismatch는 즉시 FAIL이며 reference를 resize해 숨기지 않는다. 작은 mismatch ratio라도 큰 의미 영역이 남으면 FAIL할 수 있다. AA noise는 실제 mismatch mask에서 제외하지만 사람이 보는 diff는 유지한다.
