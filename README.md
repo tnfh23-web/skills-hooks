@@ -44,7 +44,9 @@ npm run qa:responsive -- --url http://127.0.0.1:3000/ --output qa/responsive-rep
 
 - `work/reference-spec.json`: reference pixel dimensions, viewport, `captureMode`, section/major element bounds, typography 기대값을 가진다. source/Figma/PSD bounds를 우선하고 PNG만 있으면 deterministic measurement를 사용한다.
 - `work/interaction-plan.json`: interaction candidate의 id, selector, semanticType, evidence, provenance, confidence, implementation, recipe, requiredStates, responsive/reduced-motion 동작과 verification을 가진 유일한 SSOT다.
-- Interaction authoring: discovery 뒤 `interactionLanguage`와 candidate별 `authoring`을 생성한다. 순서는 semantic type → intent → interaction family → primitive이며, `required-baseline`, `affordance-driven`, `enhanced-motion` 정책을 분리한다. Corpus는 효과 복제 목록이 아니라 재사용 가능한 interaction vocabulary다.
+- Interaction authoring: discovery 뒤 `interactionLanguage`, `actionableAuthoring`, candidate별 `authoring`, `interactionComposition`을 생성한다. 순서는 semantic type → intent → interaction family → primitive이며, `required-baseline`, `affordance-driven`, `enhanced-motion` 정책을 분리한다. `coverage.actionable`의 모든 selector는 actionable authoring group에 연결되어야 한다. Behavior authoring(클릭 후 상태 변화)과 feedback authoring(hover/focus/active primitive)을 분리한다. Corpus는 효과 복제 목록이 아니라 재사용 가능한 interaction vocabulary다.
+- Primitive selection은 recipe의 고정 효과를 복사하지 않고 visual language의 line/shape/image/density/contrast 관찰값과 primitive 후보군을 조합해 결정하며 rationale을 남긴다. Anti-generic validator는 3개 이상 semantic group의 단일 primitive 반복, 80% 이상 opacity-only, generic translateY/card-lift 반복, image/card 전체 generic scale, 근거 없는 decorative arrow를 FAIL 처리한다. 작은 1~2 group 페이지의 동일 primitive는 허용한다.
+- `interactionComposition`은 `primary`, `secondary`, `continuous`, `restraint` 네 역할을 가진다. stateful affordance가 있는데 primary가 비어 있거나 continuous motion만 남으면 plan을 거부한다. REFERENCE_MODE enhanced-motion은 evidence가 없으면 `implementation: "skip"`만 허용하고, DESIGN_MODE는 motionLanguage의 preferred/banned family와 pointer/continuous/scroll/pace/character 제약을 실제 selection에 사용한다.
 
 ## Skill 계층
 

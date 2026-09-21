@@ -17,7 +17,8 @@
     "test:hook": "node tests/hook.test.mjs",
     "test:workflow": "node tests/workflow-contract.test.mjs",
     "test:interaction-motion": "node tests/interaction-motion-contract.test.mjs",
-    "test": "npm run test:syntax && npm run test:qa && npm run test:workflow && npm run test:interaction-motion && npm run test:hook"
+    "test:interaction-authoring": "node tests/interaction-authoring.test.mjs",
+    "test": "npm run test:syntax && npm run test:qa && npm run test:workflow && npm run test:interaction-motion && npm run test:interaction-authoring && npm run test:hook"
   },
   "devDependencies": {
     "pixelmatch": "^6.0.0",

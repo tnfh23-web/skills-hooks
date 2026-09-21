@@ -12,6 +12,8 @@
 
 `tools/interaction-authoring.mjs`는 DOM의 typography, line, shape, image, density, contrast, motion cue를 결정적으로 관찰해 `interactionLanguage`를 만들고, 각 discovered candidate에 vocabulary family와 primitive를 기록한다. `global-scale-1.05`, `generic-card-lift`, `decorative-arrow-default`, `all-elements-opacity-only`는 기본 금지 목록이다.
 
+`coverage.actionable`은 `actionableAuthoring` group과 selector 기준으로 연결된다. Group에는 `semanticType`, `intent`, `interactionFamily`, `primitive`, `policy`, `rationale`, `vocabularySource`, `verificationRoute`가 있고, `behavior`와 `requiredFeedback`를 분리한다. `interactionComposition`은 페이지의 primary/stateful interaction, secondary feedback, continuous motion, restraint area를 나타낸다. Anti-generic validator는 의미가 다른 group에 동일 효과를 반복하는 false variety를 차단하지만 작은 페이지에는 예외를 둔다.
+
 | Reference/Pattern | Category | Skill/Recipe | Verifier | 자동화 상태 |
 |---|---|---|---|---|
 | tabs / role=tab | STATE_INTERACTION | tabs | Interaction QA | automatic |

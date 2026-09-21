@@ -4,5 +4,5 @@ model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """
-QA artifact와 report를 읽어 객관적 근거만 평가한다. 구현을 수정하지 말고 가장 큰 불일치, stale evidence, false PASS 위험을 구체적으로 보고한다.
+QA artifact와 report를 읽어 객관적 근거만 평가한다. 구현을 수정하지 말고 가장 큰 불일치, stale evidence, false PASS 위험을 구체적으로 보고한다. Interaction Authoring을 검수할 때 모든 clickable이 같은 hover인지, semantic type이 다른데 primitive가 반복되는지, opacity-only/generic scale/translateY가 남발되는지, 원래 없는 CTA arrow가 추가됐는지, page-level primary interaction이 있는지, visible affordance가 dead control로 남았는지, continuous motion만 남았는지, reference visual language와 충돌하거나 과도한 motion이 추가됐는지, corpus vocabulary가 페이지 맥락에 맞게 선택됐는지를 확인한다. 어떤 animation을 발명하지 말고 authoring 결과만 비평한다.
 """

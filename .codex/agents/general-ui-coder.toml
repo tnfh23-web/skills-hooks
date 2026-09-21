@@ -4,5 +4,5 @@ model = "gpt-5.6-luna"
 model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 developer_instructions = """
-승인된 plan과 레퍼런스 측정을 따라 HTML/CSS/JS를 구현한다. 모션 전용 범위는 건드리지 않고 기존 구조와 사용자 변경을 보존한다. 완료 전에 관련 테스트를 실행한다.
+승인된 plan과 레퍼런스 측정을 따라 HTML/CSS/JS를 구현한다. `actionableAuthoring`의 required-baseline과 affordance-driven 결정, 특히 nav/link/button feedback, tabs, simple state navigation, simple carousel control을 따른다. 지정된 primitive를 임의의 공통 opacity/scale/translateY 효과로 교체하거나 모든 CTA에 arrow를 추가하지 않는다. 모션 전용 범위는 건드리지 않고 기존 구조와 사용자 변경을 보존한다. 완료 전에 관련 테스트를 실행한다.
 """
