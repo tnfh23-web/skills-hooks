@@ -21,6 +21,13 @@ function assertFresh(candidateReport, label) {
   }
 }
 
+function assertTargetRoot(candidateReport, label, expectedRoot) {
+  if (!candidateReport?.sourceRoot) return;
+  if (path.resolve(candidateReport.sourceRoot) !== expectedRoot) {
+    block(`The ${label} verification targets a different source root.`, `Run ${label} QA with --source-root ${expectedRoot}; reports must track the current target project.`);
+  }
+}
+
 const cwd = process.cwd();
 let latestRun;
 try { latestRun = resolveLatestRun(cwd); }
@@ -68,6 +75,10 @@ if (report.status !== 'PASS' || missingArtifacts.length > 0) {
 }
 
 assertFresh(report, 'visual');
+const canonicalRoot = path.resolve(report.sourceRoot || cwd);
+if (report.sourceRootContract?.explicit === true && canonicalRoot !== path.resolve(cwd)) {
+  block('The explicit QA source root does not match the canonical target project.', `Run the canonical QA command from ${cwd} with --source-root ${cwd}.`);
+}
 
 for (const gate of [
   { key: 'geometryRequired', file: geometryPath, label: 'geometry' },
@@ -84,6 +95,7 @@ for (const gate of [
       emit({ continue: false, stopReason: `Required ${gate.label} verification failed.`, systemMessage: `Fix ${gate.label} QA failures in ${gate.file} before completion.` });
       process.exit(0);
     }
+    assertTargetRoot(gateReport, gate.label, canonicalRoot);
     assertFresh(gateReport, gate.label);
   } catch (error) {
     emit({ continue: false, stopReason: `The ${gate.label} verification report is not valid JSON.`, systemMessage: `Fix ${gate.file} and run verification again. ${error.message}` });
@@ -119,7 +131,11 @@ if (report.interactionQa?.required === true) {
     });
     process.exit(0);
   }
+  assertTargetRoot(interaction, 'interaction', canonicalRoot);
   assertFresh(interaction, 'interaction');
+  if (report.qualityGates?.interactionCoverageRequired && interaction.coverage?.status !== 'PASS') {
+    block('Required interaction coverage verification failed.', 'Fix hover, focus-visible, perceptibility, and actionable behavior gaps in qa/interaction-report.json before completion.');
+  }
 }
 
 let motion = null;
@@ -128,6 +144,7 @@ if (report.qualityGates?.motionRequired) {
   try { motion = JSON.parse(fs.readFileSync(motionPath, 'utf8')); }
   catch (error) { block('The motion verification report is not valid JSON.', `Fix ${motionPath} and run motion QA again. ${error.message}`); }
   if (motion.status !== 'PASS') block('Required motion verification failed.', `Fix failed motion checks in ${motionPath}.`);
+  assertTargetRoot(motion, 'motion', canonicalRoot);
   assertFresh(motion, 'motion');
 }
 

@@ -5,6 +5,7 @@ import { chromium } from 'playwright';
 import { createSourceFingerprint } from './source-fingerprint.mjs';
 import { discoverInteractionPlan, readInteractionPlan } from './interaction-plan.mjs';
 import { patternForCandidate } from './interaction-patterns.mjs';
+import { runInteractionCoverage } from './interaction-coverage.mjs';
 
 function parseArgs(argv) {
   const args = {};
@@ -78,6 +79,25 @@ async function snapshot(page, candidate) {
       const progressMax = progress?.hasAttribute('aria-valuemax') ? Number(progress.getAttribute('aria-valuemax')) : null;
       const progressPercent = progress && progressValue === null ? Number.parseFloat(progress.style.width || getComputedStyle(progress).width) : null;
       const thumb = [...root.querySelectorAll('[data-thumbnail]')];
+      const projection = slides.filter((slide) => visible(slide)).map((slide) => {
+        const rect = slide.getBoundingClientRect();
+        const media = slide.querySelector('img, video, [data-media]');
+        const style = getComputedStyle(slide);
+        return {
+          text: (slide.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+          media: media?.currentSrc || media?.getAttribute('src') || media?.getAttribute('data-media') || null,
+          rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
+          opacity: style.opacity,
+          transform: style.transform
+        };
+      });
+      const rootMedia = root.querySelector('img[data-landscape-image], video[data-media], [data-media]');
+      const rootState = [...root.querySelectorAll('[data-current], [data-total], [data-landscape-count], [data-landscape-copy], [data-page][aria-selected="true"], [data-pagination][aria-current="true"]')]
+        .map((node) => ({ text: (node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 160), selected: node.getAttribute('aria-selected'), current: node.getAttribute('aria-current') }));
+      projection.unshift({
+        rootState,
+        media: rootMedia?.currentSrc || rootMedia?.getAttribute('src') || rootMedia?.getAttribute('data-media') || null
+      });
       state.carousel = {
         slideCount: slides.length,
         activeIndexes,
@@ -88,7 +108,8 @@ async function snapshot(page, candidate) {
         progressValue,
         progressMax,
         progressPercent,
-        thumbnailIndex: thumb.findIndex((node) => node.getAttribute('aria-current') === 'true' || node.classList.contains('active') || node.dataset.active === 'true')
+        thumbnailIndex: thumb.findIndex((node) => node.getAttribute('aria-current') === 'true' || node.classList.contains('active') || node.dataset.active === 'true'),
+        projection
       };
     }
     if (candidate.semanticType === 'hover') {
@@ -219,8 +240,10 @@ async function verifyCandidate(page, candidate) {
       return { candidateId: candidate.id, control: candidate.selector, type: candidate.semanticType, recipe: candidate.recipe, routing, status: pass ? 'PASS' : 'FAIL', before, after, closeState, outsideCloseState, evidence: { opened, closed, outsideClosed, focusValid, closeOnEscape: Boolean(candidate.verification?.closeOnEscape), closeOnOutside: Boolean(candidate.verification?.closeOnOutside) }, failureReason: pass ? null : reason };
     } else if (candidate.semanticType === 'carousel') {
       const changed = before.carousel?.activeIndexes?.[0] !== after.carousel?.activeIndexes?.[0];
-      pass = carouselValid(before) && carouselValid(after) && changed;
-      reason = !changed ? 'Active slide did not change.' : 'Carousel changed partially; slide, counter, pagination, progress, or thumbnail state is out of sync.';
+      const projectionChanged = JSON.stringify(before.carousel?.projection || []) !== JSON.stringify(after.carousel?.projection || []);
+      pass = carouselValid(before) && carouselValid(after) && changed && projectionChanged;
+      reason = !changed ? 'Active slide did not change.' : !projectionChanged ? 'Carousel index changed without a visible slide/media/content projection change.' : 'Carousel changed partially; slide, counter, pagination, progress, thumbnail, or visible projection state is out of sync.';
+      return { candidateId: candidate.id, control: candidate.selector, type: candidate.semanticType, recipe: candidate.recipe, routing, status: pass ? 'PASS' : 'FAIL', before, after, evidence: { semanticContract: pass, activeSlideChanged: changed, visibleProjectionChanged: projectionChanged }, failureReason: pass ? null : reason };
     } else pass = JSON.stringify(before) !== JSON.stringify(after);
     return { candidateId: candidate.id, control: candidate.selector, type: candidate.semanticType, recipe: candidate.recipe, routing, status: pass ? 'PASS' : 'FAIL', before, after, evidence: { semanticContract: pass }, failureReason: pass ? null : reason };
   } catch (error) {
@@ -246,15 +269,18 @@ export async function runInteractionQa({ page, output, plan = null, planPath = n
   const selectedPlan = plan || (planPath ? readInteractionPlan(planPath) : await discoverInteractionPlan(page, { designMode: 'reference', sourceRoot }));
   const candidates = selectedPlan.candidates.filter((candidate) => candidate.implementation !== 'skip');
   const checks = [];
+  const coverage = selectedPlan.coverage?.actionable ? await runInteractionCoverage({ page, actionable: selectedPlan.coverage.actionable, candidates }) : null;
+  if (coverage) await page.reload({ waitUntil: 'load' });
   for (const candidate of candidates) checks.push(await verifyCandidate(page, candidate));
   const mobileChecks = checkMobile ? await verifyMobileEssentialContent(page, candidates) : [];
-  const failures = [...checks.filter((check) => check.status === 'FAIL'), ...mobileChecks.filter((check) => check.status === 'FAIL')];
+  const failures = [...checks.filter((check) => check.status === 'FAIL'), ...mobileChecks.filter((check) => check.status === 'FAIL'), ...(coverage?.status === 'FAIL' ? coverage.elements.filter((element) => element.status === 'FAIL') : [])];
   const activeChecks = checks.filter((check) => !['DEFERRED', 'UNSUPPORTED'].includes(check.status));
   const motionChecks = checks.filter((check) => check.routing?.verifier === 'motion-qa');
   const unsupportedChecks = checks.filter((check) => check.status === 'UNSUPPORTED');
   const report = {
     generatedAt: new Date().toISOString(),
     sourceRoot: path.resolve(sourceRoot),
+    sourceRootContract: { targetProjectRoot: path.resolve(sourceRoot) },
     sourceFingerprint: createSourceFingerprint(sourceRoot),
     plan: planPath ? path.resolve(planPath) : null,
     required: candidates.some((candidate) => patternForCandidate(candidate)?.verifier === 'interaction-qa'),
@@ -262,9 +288,9 @@ export async function runInteractionQa({ page, output, plan = null, planPath = n
     candidateCount: candidates.length,
     deferredCount: motionChecks.length,
     unsupportedCount: unsupportedChecks.length,
-    status: failures.length ? 'FAIL' : activeChecks.length ? 'PASS' : 'NOT_REQUIRED',
-    checks, mobileChecks,
-    failureReasons: failures.map((failure) => `${failure.candidateId}: ${failure.failureReason || failure.reason}`)
+    status: failures.length ? 'FAIL' : activeChecks.length || coverage?.status === 'PASS' ? 'PASS' : 'NOT_REQUIRED',
+    checks, mobileChecks, coverage,
+    failureReasons: failures.map((failure) => `${failure.candidateId || failure.selector}: ${failure.failureReason || failure.reason}`)
   };
   fs.mkdirSync(path.dirname(output), { recursive: true }); fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
   return report;

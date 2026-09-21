@@ -55,12 +55,16 @@ npm run qa:responsive -- --url http://127.0.0.1:3000/ --output qa/responsive-rep
 ## QA와 최신성
 
 - Visual QA: dimension, 실제 mismatch mask, mismatch ratio와 큰 region을 함께 판정하고 `actual.png`, `diff.png`, `overlay.png`, `mask.png`, `report.json`을 만든다.
-- Interaction QA: state candidate를 실제 클릭/hover하고 before/after semantic state와 carousel projection 동기화를 검사한다.
+- Interaction QA: state candidate를 실제 클릭/hover하고 before/after semantic state와 carousel projection 동기화를 검사한다. interaction plan이 선택되면 visible actionable element inventory도 함께 검사해 hover feedback, keyboard focus-visible feedback, perceptible feedback, native 또는 검증된 click behavior가 빠진 control을 selector와 failure reason으로 기록한다.
 - Motion QA: marquee 구조와 reduced motion을 검사하고, shared scroll recipe는 0/0.25/0.5/0.75/1 sample을 사용한다. Dedicated recipe는 pin 도달/해제, active scene 전환, 접근 가능한 원문·font·responsive text, track distance/mobile fallback을 각각 확인하며 required state coverage와 runtime error를 report에 남긴다.
 - Geometry QA: 레퍼런스 좌표와 `getBoundingClientRect()`를 비교해 `dx/dy/dw/dh`를 기록한다.
 - Responsive QA: 1024×768 및 390×844에서 overflow, 잘림, 중복 instance, 숨겨진 branch animation, hover-only 핵심 정보 등을 점검한다.
 
-Visual, Interaction, Motion, Geometry, Responsive 보고서는 소스 지문을 가진다. `--set-latest`가 쓰는 `qa/latest-run.json`은 Stop Hook이 판정할 canonical output을 가리킨다. Hook은 필요한 보고서의 PASS뿐 아니라 현재 소스와 지문이 일치하는지도 검사한다. `qa/`, `qa-*`, `qa_*`, `qa.*` 같은 최상위 QA 산출물 루트만 지문에서 제외하며 `qaSomething/` 같은 실제 소스 폴더는 제외하지 않는다.
+Visual, Interaction, Motion, Geometry, Responsive 보고서는 소스 지문을 가진다. 외부 target을 검수할 때는 모든 명령에 `--source-root <target-project>`를 명시하고, `--set-latest`는 그 target의 canonical QA output을 가리키게 한다. Stop Hook은 canonical source root가 일치하는지, 필요한 보고서가 PASS인지, actionable coverage가 통과했는지, 현재 소스와 지문이 일치하는지를 검사한다. 의도적인 marquee/scene clipping은 target DOM에 `data-qa-allow-clipping`을 명시해야 하며 Responsive report의 `allowedClipping`에 기록된다. `qa/`, `qa-*`, `qa_*`, `qa.*` 같은 최상위 QA 산출물 루트만 지문에서 제외하며 `qaSomething/` 같은 실제 소스 폴더는 제외하지 않는다.
+
+### Actionable coverage와 perceptibility
+
+interaction plan의 `coverage.actionable`은 명확하게 검출되는 `a`, `button`, `role=tab`, `summary`, `aria-expanded`, next/prev control만 대상으로 한다. hover는 pointer 이동 전후의 computed style, focus는 keyboard 경로와 `:focus-visible`, click은 native navigation/submit·명시적 handler·interaction candidate 중 하나의 근거를 요구한다. 실제 상태 변화는 Interaction QA가 별도로 click 전후 semantic state와 panel/projection을 확인하므로 범용 자동화 엔진으로 추측하지 않는다.
 
 ## Local-first와 단위
 

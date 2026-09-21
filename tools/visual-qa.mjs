@@ -4,6 +4,7 @@ import process from 'node:process';
 import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
 import { chromium } from 'playwright';
+import { fileURLToPath } from 'node:url';
 import { createSourceFingerprint } from './source-fingerprint.mjs';
 import { runInteractionQa } from './interaction-qa.mjs';
 import { writeLatestRun } from './qa-run.mjs';
@@ -43,6 +44,18 @@ function writePng(file, image) {
 function fileUrl(value) {
   if (/^[a-z]+:\/\//i.test(value)) return value;
   return new URL(`file://${path.resolve(value).replaceAll('\\', '/')}`).href;
+}
+
+function resolveSourceRoot(args, url) {
+  const explicit = Boolean(args['source-root']);
+  const root = path.resolve(args['source-root'] || process.cwd());
+  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) throw new Error(`Source root does not exist or is not a directory: ${root}`);
+  if (!explicit && url.startsWith('file://')) {
+    const target = fileURLToPath(new URL(url));
+    const relative = path.relative(root, target);
+    if (relative.startsWith('../') || path.isAbsolute(relative)) throw new Error(`External file target requires --source-root <target-project>: ${target}`);
+  }
+  return root;
 }
 
 function regionOverlap(a, b) {
@@ -143,6 +156,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const outputDir = path.resolve(args.output || 'qa');
   const url = fileUrl(requireArg(args, 'url'));
+  const sourceRoot = resolveSourceRoot(args, url);
   const captureMode = String(args['capture-mode'] || 'viewport');
   if (!['viewport', 'fullPage'].includes(captureMode)) throw new Error(`Unsupported --capture-mode "${captureMode}". Use viewport or fullPage.`);
   const fullPage = captureMode === 'fullPage';
@@ -226,7 +240,7 @@ async function main() {
         page: interactionPage,
         output: path.join(outputDir, 'interaction-report.json'),
         planPath: args['interaction-plan'] ? path.resolve(args['interaction-plan']) : null,
-        sourceRoot: process.cwd()
+        sourceRoot
       });
       await interactionPage.close();
     }
@@ -234,13 +248,15 @@ async function main() {
       geometryRequired: Boolean(args['require-geometry']),
       responsiveRequired: Boolean(args['require-responsive']),
       interactionPlanRequired: Boolean(args['interaction-plan']),
+      interactionCoverageRequired: Boolean(args['interaction-plan']),
       motionRequired: Boolean(args['require-motion']) || interaction.motionRequired || false
     };
     const report = {
       generatedAt: new Date().toISOString(), captureMode, reference: { path: referencePath, width: reference.width, height: reference.height }, actual: { path: actualPath, width: actual.width, height: actual.height },
       viewport: { width, height, deviceScaleFactor: 1, browser: 'chromium' }, document: documentDimensions, mismatchPixelCount: mismatchPixels, mismatchRatio: dimensionMatch ? mismatchPixels / totalPixels : 1,
-      sourceFingerprint: createSourceFingerprint(process.cwd()),
-      sourceRoot: process.cwd(),
+      sourceFingerprint: createSourceFingerprint(sourceRoot),
+      sourceRoot,
+      sourceRootContract: { targetProjectRoot: sourceRoot, explicit: Boolean(args['source-root']) },
       qualityGates,
       majorMismatchRegions: regionStats, visualDecision: {
         status: visualStatus,
@@ -252,7 +268,7 @@ async function main() {
       status: visualStatus, failureReasons, interactionPlan: args['interaction-plan'] ? path.resolve(args['interaction-plan']) : null, interactionQa: { required: interaction.required, status: interaction.status }
     };
     fs.writeFileSync(path.join(outputDir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
-    if (args['set-latest']) writeLatestRun(process.cwd(), outputDir);
+    if (args['set-latest']) writeLatestRun(sourceRoot, outputDir);
     if (visualStatus === 'FAIL' || interaction.status === 'FAIL') process.exitCode = 1;
     await context.close();
   } finally { await browser.close(); }

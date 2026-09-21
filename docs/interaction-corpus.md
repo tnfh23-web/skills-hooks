@@ -20,7 +20,7 @@
 | image sequence | SCROLL_MOTION | shared recipe | Motion QA | contract |
 | canvas / WebGL | ADVANCED | deferred | manual | unsupported |
 
-`contract`는 `verification.sampleSelector`처럼 결정적 관찰 지점이 있어야 자동 실행한다는 뜻이다. 계약이 없으면 Motion QA는 PASS 대신 `DEFERRED`를 기록한다. Dedicated scroll recipe는 registry의 `requiredStates`와 동일한 `verification.expectedStates`를 반드시 선언한다. pin-scrub은 pin release, scene-transition은 이전→현재→다음 active scene, split-text는 accessible original/font/duplicate announcement, horizontal-pin은 `track.scrollWidth - viewport.clientWidth`, overflow, mobile fallback까지 전용 verifier가 확인한다. Interaction QA의 dropdown/menu-state는 control·panel의 초기 동기화, 실제 open, 계획된 dismiss 동작을 검사하며 generic class diff로 대체하지 않는다. Interaction QA는 Motion/Advanced 후보를 generic click으로 검사하지 않는다.
+`contract`는 `verification.sampleSelector`처럼 결정적 관찰 지점이 있어야 자동 실행한다는 뜻이다. 계약이 없으면 Motion QA는 PASS 대신 `DEFERRED`를 기록한다. Dedicated scroll recipe는 registry의 `requiredStates`와 동일한 `verification.expectedStates`를 반드시 선언한다. pin-scrub은 pin release, scene-transition은 이전→현재→다음 active scene, split-text는 accessible original/font/duplicate announcement, horizontal-pin은 `track.scrollWidth - viewport.clientWidth`, overflow, mobile fallback까지 전용 verifier가 확인한다. Interaction QA의 dropdown/menu-state는 control·panel의 초기 동기화, 실제 open, 계획된 dismiss 동작을 검사하며 generic class diff로 대체하지 않는다. Interaction QA는 Motion/Advanced 후보를 generic click으로 검사하지 않는다. Plan이 존재하는 실행에서는 `interaction-coverage`가 visible actionable control마다 hover, keyboard focus-visible, perceptibility, native/verified click behavior를 검사하며 누락 selector와 failure reason을 report한다.
 
 ## Reference corpus 매핑
 

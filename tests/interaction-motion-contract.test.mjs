@@ -4,6 +4,7 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import { discoverInteractionPlan, validateInteractionPlan } from '../tools/interaction-plan.mjs';
 import { runInteractionQa } from '../tools/interaction-qa.mjs';
+import { collectActionableInventory, runInteractionCoverage } from '../tools/interaction-coverage.mjs';
 import { runMotionQa } from '../tools/motion-qa.mjs';
 import { assertPatternRegistry, PATTERN_REGISTRY } from '../tools/interaction-patterns.mjs';
 
@@ -104,6 +105,39 @@ try {
   assert.equal(unsupported.status, 'UNSUPPORTED');
   assert.equal(unsupported.evidence.clicked, false);
   await routedContext.close();
+
+  async function coverageFixture(name) {
+    const coverageContext = await browser.newContext({ viewport: { width: 800, height: 600 } });
+    const coveragePage = await coverageContext.newPage(); await coveragePage.goto(fileUrl(fixture(name)), { waitUntil: 'load' });
+    const actionable = await collectActionableInventory(coveragePage);
+    const coverage = await runInteractionCoverage({ page: coveragePage, actionable, candidates: [] });
+    await coverageContext.close();
+    return coverage;
+  }
+  const coveragePass = await coverageFixture('coverage-positive.html');
+  assert.equal(coveragePass.status, 'PASS');
+  assert.deepEqual({ visible: coveragePass.visibleActionableElements, hover: coveragePass.withHoverFeedback, focus: coveragePass.withFocusVisibleFeedback, click: coveragePass.withClickBehavior }, { visible: 2, hover: 2, focus: 2, click: 2 });
+  const noHover = await coverageFixture('clickable-without-hover.html');
+  assert.equal(noHover.status, 'FAIL');
+  assert.ok(noHover.missingHoverFeedback.includes('#dead-hover'));
+  assert.ok(noHover.missingBehavior.includes('#dead-hover'));
+  const noFocus = await coverageFixture('missing-focus-feedback.html');
+  assert.equal(noFocus.status, 'FAIL');
+  assert.ok(noFocus.missingFocusFeedback.includes('#missing-focus'));
+
+  const perceptibilityContext = await browser.newContext({ viewport: { width: 800, height: 600 } });
+  const perceptibilityPage = await perceptibilityContext.newPage(); await perceptibilityPage.goto(fileUrl(fixture('carousel-index-only.html')), { waitUntil: 'load' });
+  const perceptibilityReport = await runInteractionQa({ page: perceptibilityPage, output: path.join(out, 'carousel-index-only.json'), plan: plan([candidate('carousel', '#carousel', 'carousel', 'carousel-state')]), sourceRoot: root, checkMobile: false });
+  assert.equal(perceptibilityReport.status, 'FAIL');
+  assert.match(perceptibilityReport.failureReasons[0], /visible slide\/media\/content projection/i);
+  await perceptibilityContext.close();
+
+  const deadArrowContext = await browser.newContext({ viewport: { width: 800, height: 600 } });
+  const deadArrowPage = await deadArrowContext.newPage(); await deadArrowPage.goto(fileUrl(fixture('dead-arrow-control.html')), { waitUntil: 'load' });
+  const deadArrowReport = await runInteractionQa({ page: deadArrowPage, output: path.join(out, 'dead-arrow-control.json'), plan: plan([candidate('carousel', '#carousel', 'carousel', 'carousel-state')]), sourceRoot: root, checkMobile: false });
+  assert.equal(deadArrowReport.status, 'FAIL');
+  assert.match(deadArrowReport.failureReasons[0], /did not change/i);
+  await deadArrowContext.close();
 } finally { await browser.close(); }
 
 const motionPlan = plan([

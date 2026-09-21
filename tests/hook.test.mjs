@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createSourceFingerprint } from '../tools/source-fingerprint.mjs';
 
 const root = process.cwd();
 const failDir = path.join(root, 'work', 'qa-contract', 'fail');
@@ -13,6 +14,9 @@ const canonicalDir = path.join(root, 'work', 'qa-contract', 'canonical');
 const motionStaleDir = path.join(root, 'work', 'qa-contract', 'motion-stale');
 const geometryStaleDir = path.join(root, 'work', 'qa-contract', 'geometry-stale');
 const responsiveStaleDir = path.join(root, 'work', 'qa-contract', 'responsive-stale');
+const geometryFailDir = path.join(root, 'work', 'qa-contract', 'geometry-fail');
+const responsiveFailDir = path.join(root, 'work', 'qa-contract', 'responsive-fail');
+const coverageFailDir = path.join(root, 'work', 'qa-contract', 'coverage-fail');
 const missingEvidenceDir = path.join(root, 'work', 'qa-contract', 'missing-evidence');
 fs.rmSync(interactionFailDir, { recursive: true, force: true });
 fs.rmSync(staleDir, { recursive: true, force: true });
@@ -21,6 +25,9 @@ fs.rmSync(canonicalDir, { recursive: true, force: true });
 fs.rmSync(motionStaleDir, { recursive: true, force: true });
 fs.rmSync(geometryStaleDir, { recursive: true, force: true });
 fs.rmSync(responsiveStaleDir, { recursive: true, force: true });
+fs.rmSync(geometryFailDir, { recursive: true, force: true });
+fs.rmSync(responsiveFailDir, { recursive: true, force: true });
+fs.rmSync(coverageFailDir, { recursive: true, force: true });
 fs.rmSync(missingEvidenceDir, { recursive: true, force: true });
 fs.mkdirSync(path.join(interactionFailDir, 'qa'), { recursive: true });
 fs.mkdirSync(path.join(staleDir, 'qa'), { recursive: true });
@@ -29,7 +36,18 @@ fs.mkdirSync(path.join(canonicalDir, 'qa'), { recursive: true });
 fs.mkdirSync(path.join(motionStaleDir, 'qa'), { recursive: true });
 fs.mkdirSync(path.join(geometryStaleDir, 'qa'), { recursive: true });
 fs.mkdirSync(path.join(responsiveStaleDir, 'qa'), { recursive: true });
+fs.mkdirSync(path.join(geometryFailDir, 'qa'), { recursive: true });
+fs.mkdirSync(path.join(responsiveFailDir, 'qa'), { recursive: true });
+fs.mkdirSync(path.join(coverageFailDir, 'qa'), { recursive: true });
 fs.mkdirSync(path.join(missingEvidenceDir, 'qa'), { recursive: true });
+const currentFingerprint = createSourceFingerprint(root);
+for (const reportName of ['report.json', 'interaction-report.json', 'motion-report.json', 'geometry-report.json', 'responsive-report.json']) {
+  const reportPath = path.join(passDir, 'qa', reportName);
+  if (!fs.existsSync(reportPath)) continue;
+  const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+  report.sourceFingerprint = currentFingerprint;
+  fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+}
 fs.copyFileSync(path.join(passDir, 'qa', 'report.json'), path.join(interactionFailDir, 'qa', 'report.json'));
 fs.copyFileSync(path.join(passDir, 'qa', 'actual.png'), path.join(interactionFailDir, 'qa', 'actual.png'));
 fs.copyFileSync(path.join(passDir, 'qa', 'diff.png'), path.join(interactionFailDir, 'qa', 'diff.png'));
@@ -98,6 +116,28 @@ for (const [gate, directory, reportName] of [['geometryRequired', geometryStaleD
   assert.equal(result.continue, false);
   assert.match(result.stopReason, new RegExp(`${gate.replace('Required', '')}.*stale|stale.*${gate.replace('Required', '')}`, 'i'));
 }
+
+for (const [gate, directory, reportName] of [['geometryRequired', geometryFailDir, 'geometry-report.json'], ['responsiveRequired', responsiveFailDir, 'responsive-report.json']]) {
+  for (const name of ['report.json', 'actual.png', 'diff.png', 'interaction-report.json']) fs.copyFileSync(path.join(passDir, 'qa', name), path.join(directory, 'qa', name));
+  const gatedVisual = JSON.parse(fs.readFileSync(path.join(directory, 'qa', 'report.json'), 'utf8'));
+  gatedVisual.qualityGates[gate] = true;
+  fs.writeFileSync(path.join(directory, 'qa', 'report.json'), `${JSON.stringify(gatedVisual, null, 2)}\n`);
+  fs.writeFileSync(path.join(directory, 'qa', reportName), `${JSON.stringify({ status: 'FAIL', sourceRoot: gatedVisual.sourceRoot, sourceFingerprint: gatedVisual.sourceFingerprint, failureReasons: ['required gate fixture failure'] }, null, 2)}\n`);
+  const result = run(directory);
+  assert.equal(result.continue, false);
+  assert.match(result.stopReason, new RegExp(`${gate.replace('Required', '')}.*failed`, 'i'));
+}
+
+for (const name of ['report.json', 'actual.png', 'diff.png', 'interaction-report.json']) fs.copyFileSync(path.join(passDir, 'qa', name), path.join(coverageFailDir, 'qa', name));
+const coverageVisual = JSON.parse(fs.readFileSync(path.join(coverageFailDir, 'qa', 'report.json'), 'utf8'));
+coverageVisual.qualityGates.interactionCoverageRequired = true;
+fs.writeFileSync(path.join(coverageFailDir, 'qa', 'report.json'), `${JSON.stringify(coverageVisual, null, 2)}\n`);
+const coverageReport = JSON.parse(fs.readFileSync(path.join(coverageFailDir, 'qa', 'interaction-report.json'), 'utf8'));
+coverageReport.coverage = { status: 'FAIL', missingHoverFeedback: ['#dead-control'] };
+fs.writeFileSync(path.join(coverageFailDir, 'qa', 'interaction-report.json'), `${JSON.stringify(coverageReport, null, 2)}\n`);
+const coverageBlocked = run(coverageFailDir);
+assert.equal(coverageBlocked.continue, false);
+assert.match(coverageBlocked.stopReason, /coverage/i);
 
 for (const name of ['report.json', 'actual.png', 'diff.png', 'interaction-report.json']) fs.copyFileSync(path.join(passDir, 'qa', name), path.join(missingEvidenceDir, 'qa', name));
 const evidencePlanPath = path.join(missingEvidenceDir, 'interaction-plan.json');

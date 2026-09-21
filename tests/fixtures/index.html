@@ -6,7 +6,7 @@
 <div id="tab-panel-a" class="panel" role="tabpanel">Overview panel</div><div id="tab-panel-b" class="panel" role="tabpanel" hidden>Details panel</div>
 <details><summary>Open accordion</summary><p>Accordion content is visible only while open.</p></details>
 <button id="menu-toggle" type="button" aria-expanded="false" aria-controls="menu-panel">Menu</button><div id="menu-panel" hidden>Menu content</div>
-</main><script>
+</main><style>.tabs button:hover,#menu-toggle:hover,summary:hover{background:#4b4b4b}.tabs button:focus-visible,#menu-toggle:focus-visible,summary:focus-visible,.tabs button:focus,#menu-toggle:focus,summary:focus{outline:2px solid #b94a38;outline-offset:2px}</style><script>
 const tabs=[...document.querySelectorAll('[role="tab"]')];
 tabs.forEach((tab)=>tab.addEventListener('click',()=>{tabs.forEach((item)=>{const active=item===tab;item.setAttribute('aria-selected',String(active));document.getElementById(item.getAttribute('aria-controls')).hidden=!active;});}));
 const menu=document.getElementById('menu-toggle');const panel=document.getElementById('menu-panel');menu.addEventListener('click',()=>{const open=menu.getAttribute('aria-expanded')!=='true';menu.setAttribute('aria-expanded',String(open));panel.hidden=!open;});

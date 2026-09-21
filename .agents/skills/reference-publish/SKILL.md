@@ -15,7 +15,7 @@ description: 정적 디자인 레퍼런스를 실제 픽셀 좌표로 측정하�
 4. **캡처** — 단일 화면은 `viewport`, 긴 문서는 `fullPage`를 사용한다. 긴 reference 높이를 viewport 높이로 바꾸지 않는다.
 5. **비교/진단** — `qa/report.json`, `actual.png`, `diff.png`와 Geometry QA의 `dx/dy/dw/dh`로 가장 큰 원인을 찾는다.
 6. **수정** — 가장 작은 관련 범위를 고치고 다시 캡처한다.
-7. **검증** — 최종 Visual QA 뒤 상호작용이 있으면 `interaction-ready` 단계로 들어가 plan을 만들고 Interaction/Motion QA를 분리 실행한다.
+7. **검증** — 최종 Visual QA 뒤 상호작용이 있으면 `interaction-ready` 단계로 들어가 plan을 만들고 Interaction/Motion QA를 분리 실행한다. Plan 기반 실행에서는 actionable hover/focus-visible/perceptibility/click coverage도 기록한다.
 
 ## 시각 QA 계약
 
@@ -29,4 +29,4 @@ reference와 actual은 width/height가 정확히 같아야 한다. dimension mis
 
 ## 완료 gate
 
-필요한 Visual/Interaction/Motion/Geometry/Responsive 보고서가 PASS이고 현재 소스 지문과 일치해야 한다. Stop Hook은 객관적 증거만 검사하며 효과를 발명하지 않는다.
+필요한 Visual/Interaction/Motion/Geometry/Responsive 보고서가 PASS이고 현재 소스 지문 및 canonical source root와 일치해야 한다. Required interaction coverage가 있으면 모든 명확한 actionable control의 hover/focus-visible/perceptibility/click 근거도 PASS여야 한다. 의도적 clipping은 `data-qa-allow-clipping`으로 명시하고 report에 남긴다. Stop Hook은 객관적 증거만 검사하며 효과를 발명하지 않는다.

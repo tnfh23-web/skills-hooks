@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createSourceFingerprint } from './source-fingerprint.mjs';
 import { KNOWN_RECIPES, PATTERN_REGISTRY } from './interaction-patterns.mjs';
+import { collectActionableInventory } from './interaction-coverage.mjs';
 
 export { KNOWN_RECIPES } from './interaction-patterns.mjs';
 
@@ -25,6 +26,7 @@ export function validateInteractionPlan(plan) {
   if (plan.version !== 1) errors.push('version must be 1');
   if (!['reference', 'design'].includes(plan.designMode)) errors.push('designMode must be reference or design');
   if (!Array.isArray(plan.candidates)) errors.push('candidates must be an array');
+  if (plan.coverage !== undefined && (!plan.coverage || !Array.isArray(plan.coverage.actionable))) errors.push('coverage.actionable must be an array when coverage is present');
   if (plan.designMode === 'design' && (!plan.motionLanguage || !plan.motionLanguage.character || !plan.motionLanguage.pace || !Array.isArray(plan.motionLanguage.preferredFamilies) || !Array.isArray(plan.motionLanguage.bannedFamilies) || !plan.motionLanguage.sectionEntryVariation || !plan.motionLanguage.pointerUsage || !plan.motionLanguage.continuousMotionUsage || !plan.motionLanguage.scrollStory)) {
     errors.push('DESIGN_MODE requires a complete motionLanguage contract');
   }
@@ -163,6 +165,7 @@ export async function discoverInteractionPlan(page, { designMode = 'reference', 
     reducedMotionBehavior: ['marquee', 'scroll-story'].includes(candidate.semanticType) ? 'Stop continuous/scrub motion and expose a safe readable state.' : 'Preserve state behavior without decorative transition.',
     verification: candidate.verification
   }));
+  const actionable = await collectActionableInventory(page);
   const plan = {
     version: 1,
     generatedAt: new Date().toISOString(),
@@ -170,7 +173,16 @@ export async function discoverInteractionPlan(page, { designMode = 'reference', 
     motionLanguage: designMode === 'design' ? (motionLanguage || { character: 'restrained', pace: 'moderate', preferredFamilies: [], bannedFamilies: ['generic-card-lift', 'all-sections-fade-up'], sectionEntryVariation: 'section intent에 따라 2~4개 family 안에서 변주', pointerUsage: 'semantic affordance가 있는 요소에만 제한', continuousMotionUsage: '희소하게 사용하고 정보 전달을 방해하지 않음', scrollStory: '내용의 순차 이해에 필요한 경우만 사용' }) : null,
     sourceRoot: path.resolve(sourceRoot),
     sourceFingerprint: createSourceFingerprint(sourceRoot),
-    candidates: normalized
+    candidates: normalized,
+    coverage: {
+      policy: {
+        actionableHover: 'required',
+        keyboardFocusVisible: 'required',
+        perceptibleStateChange: 'required',
+        nativeOrVerifiedClickBehavior: 'required'
+      },
+      actionable
+    }
   };
   const result = validateInteractionPlan(plan);
   if (!result.valid) throw new Error(result.errors.join('; '));
