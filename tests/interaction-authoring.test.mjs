@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { collectActionableInventory } from '../tools/interaction-coverage.mjs';
 import { AUTHORING_POLICIES, analyzeInteractionLanguage, authorActionableInventory, authorInteractionCandidate, buildInteractionComposition, validateAuthoring } from '../tools/interaction-authoring.mjs';
+import { discoverInteractionPlan, validateInteractionPlan } from '../tools/interaction-plan.mjs';
 
 const language = { version: 1, character: 'editorial / restrained / tactile', visualCues: { lineUsage: { borderedVisibleElements: 4 }, imageTreatment: { imageCount: 2 } }, linkBehavior: ['underline-reveal', 'opacity-shift'], buttonBehavior: ['fill', 'border-transition'], mediaBehavior: ['crop-shift', 'caption-reveal'], stateTransition: ['crossfade', 'clip'], navigationBehavior: ['underline', 'active-bar'], banned: ['generic-card-lift', 'global-scale-1.05', 'decorative-arrow-default', 'all-elements-opacity-only'] };
 const candidate = (id, recipe, semanticType, provenance = 'source-annotation', confidence = 'high', implementation = 'required') => ({ id, recipe, semanticType, provenance, confidence, implementation, evidence: [`explicit ${recipe} evidence`] });
 const candidateWithAuthoring = (item, designMode = 'reference', motionLanguage = null) => { const authoring = authorInteractionCandidate(item, { designMode, interactionLanguage: language, motionLanguage }); return { ...item, implementation: authoring.implementation || item.implementation, authoring }; };
 const planFrom = ({ coverage = [], actionableAuthoring = [], candidates = [], interactionComposition, designMode = 'reference', interactionLanguage = language } = {}) => ({ version: 1, designMode, interactionLanguage, coverage: { actionable: coverage }, actionableAuthoring, candidates, interactionComposition: interactionComposition || buildInteractionComposition({ candidates, actionableAuthoring, interactionLanguage }) });
+const group = ({ id, selectors, semanticType, primitive, policy = AUTHORING_POLICIES.REQUIRED_BASELINE }) => ({ id, selectors, elementCount: selectors.length, elements: selectors.map((selector) => ({ selector, semanticType })), semanticType, intent: 'navigate', interactionFamily: `${semanticType.toLowerCase()}-feedback`, primitive, policy, rationale: `Fixture ${primitive} authoring.`, vocabularySource: ['regression fixture'], requiredFeedback: ['hover', 'focus-visible', 'active/tap'], behavior: { required: policy === AUTHORING_POLICIES.AFFORDANCE_DRIVEN, candidateIds: [] }, verificationRoute: 'interaction-coverage' });
 
 const browser = await chromium.launch({ headless: true });
 try {
@@ -64,7 +66,54 @@ try {
   assert.equal(validateAuthoring(planFrom({ coverage: [{ selector: '#one' }, { selector: '#two' }], actionableAuthoring: [{ id: 'one', ...small, selectors: ['#one'] }], interactionLanguage: analyzed })).valid, false, 'M uncovered actionable must fail');
   assert.equal(validateAuthoring(planFrom({ coverage: [{ selector: '#one' }], actionableAuthoring: [{ id: 'other', ...small, selectors: ['#other'] }], interactionLanguage: analyzed })).valid, false, 'N orphan authoring selector must fail');
 
+  // O: the real discover path resolves one effective DESIGN_MODE language before authoring.
+  const designPage = await context.newPage();
+  await designPage.setContent('<style>section,[data-motion-sample],[data-scene]{display:block;width:240px;height:80px}</style><section id="scene" data-motion-recipe="scene-transition"><div data-motion-sample data-state="previous-scene"></div><div data-scene class="active"></div></section>');
+  const customMotionLanguage = { character: 'editorial', pace: 'measured', preferredFamilies: ['scene-transition'], bannedFamilies: [], preferredPrimitives: ['text-image-shift'], bannedPrimitives: [], sectionEntryVariation: 'section intent에 따라 변주', pointerUsage: 'affordance only', continuousMotionUsage: 'limited', scrollStory: 'contract' };
+  const customDesignPlan = await discoverInteractionPlan(designPage, { designMode: 'design', sourceRoot: process.cwd(), motionLanguage: customMotionLanguage });
+  const defaultDesignPlan = await discoverInteractionPlan(designPage, { designMode: 'design', sourceRoot: process.cwd() });
+  assert.equal(customDesignPlan.motionLanguage, customMotionLanguage, 'O plan records the exact motionLanguage used by authoring');
+  assert.equal(customDesignPlan.candidates[0].authoring.primitive, 'text-image-shift', 'O supplied motionLanguage changes production-path primitive selection');
+  assert.notEqual(customDesignPlan.candidates[0].authoring.primitive, defaultDesignPlan.candidates[0].authoring.primitive, 'O default and supplied motionLanguage produce different deterministic authoring');
+  assert.equal(validateInteractionPlan(customDesignPlan).valid, true, 'O production discover plan validates');
+  await designPage.close();
+
+  // P: hard banned primitives precede motion preference, then interaction-language preference.
+  const preferredTab = candidateWithAuthoring(candidate('preferred-tab', 'tabs', 'tabs'), 'design', { preferredFamilies: [], bannedFamilies: [], preferredPrimitives: ['active-bar'], bannedPrimitives: [], pointerUsage: 'affordance', continuousMotionUsage: 'limited', scrollStory: 'contract' });
+  const bannedPreferredTab = candidateWithAuthoring(candidate('banned-preferred-tab', 'tabs', 'tabs'), 'design', { preferredFamilies: [], bannedFamilies: [], preferredPrimitives: ['active-bar', 'clip'], bannedPrimitives: ['active-bar'], pointerUsage: 'affordance', continuousMotionUsage: 'limited', scrollStory: 'contract' });
+  assert.equal(preferredTab.authoring.primitive, 'active-bar');
+  assert.equal(bannedPreferredTab.authoring.primitive, 'clip', 'P banned primitive is removed before deterministic preferred selection');
+
+  // Q/R: a true continuous-only page fails; a primary state interaction plus marquee passes.
+  const onlyMarquee = candidateWithAuthoring(candidate('only-marquee', 'marquee', 'marquee'));
+  assert.equal(validateAuthoring(planFrom({ candidates: [onlyMarquee], interactionComposition: { primary: [], secondary: [], continuous: ['only-marquee'], restraint: ['non-interactive-content'] }, interactionLanguage: analyzed })).valid, false, 'Q continuous-only composition must fail without stateful affordances');
+  assert.equal(validateAuthoring(planFrom({ candidates: [tab, onlyMarquee], interactionComposition: { primary: ['state-nav'], secondary: [], continuous: ['only-marquee'], restraint: ['dense-editorial-copy'] }, interactionLanguage: analyzed })).valid, true, 'R primary interaction plus marquee may pass');
+
+  // S: grouped cards use actionable element count, so one multi-card group cannot hide scale spam.
+  const cardSelectors = ['#card-1', '#card-2', '#card-3']; const scaledCards = group({ id: 'editorial-card-links', selectors: cardSelectors, semanticType: 'CARD_LINK', primitive: 'restrained-image-scale' });
+  assert.equal(validateAuthoring(planFrom({ coverage: cardSelectors.map((selector) => ({ selector })), actionableAuthoring: [scaledCards], interactionLanguage: analyzed })).valid, false, 'S grouped image/card scale spam must fail by element count');
+  const twoCardSelectors = ['#small-card-1', '#small-card-2']; const twoScaledCards = group({ id: 'small-card-links', selectors: twoCardSelectors, semanticType: 'CARD_LINK', primitive: 'restrained-image-scale' });
+  assert.equal(validateAuthoring(planFrom({ coverage: twoCardSelectors.map((selector) => ({ selector })), actionableAuthoring: [twoScaledCards], interactionLanguage: analyzed })).valid, true, 'S small one-to-two card exception remains valid');
+
+  // T: generic translateY/card-lift repeated across three semantic groups fails.
+  const lifted = [group({ id: 'lift-nav', selectors: ['#lift-nav'], semanticType: 'NAV', primitive: 'translateY(4px)' }), group({ id: 'lift-button', selectors: ['#lift-button'], semanticType: 'BUTTON', primitive: 'generic-card-lift' }), group({ id: 'lift-card', selectors: ['#lift-card'], semanticType: 'CARD_LINK', primitive: 'translateY-card-lift' })];
+  assert.equal(validateAuthoring(planFrom({ coverage: lifted.flatMap((item) => item.selectors).map((selector) => ({ selector })), actionableAuthoring: lifted, interactionLanguage: analyzed })).valid, false, 'T repeated translateY/card-lift must fail');
+
+  // U: decorative arrows fail on CTA/BUTTON but remain legal for semantic arrow controls.
+  const arrowCta = group({ id: 'arrow-cta', selectors: ['#arrow-cta'], semanticType: 'CTA', primitive: 'decorative-arrow-default' });
+  const arrowIcon = group({ id: 'arrow-icon', selectors: ['#arrow-icon'], semanticType: 'ICON_BUTTON', primitive: 'decorative-arrow-default', policy: AUTHORING_POLICIES.AFFORDANCE_DRIVEN });
+  assert.equal(validateAuthoring(planFrom({ coverage: [{ selector: '#arrow-cta' }], actionableAuthoring: [arrowCta], interactionLanguage: analyzed })).valid, false, 'U decorative CTA arrow must fail');
+  assert.equal(validateAuthoring(planFrom({ coverage: [{ selector: '#arrow-icon' }], actionableAuthoring: [arrowIcon], interactionLanguage: analyzed })).valid, true, 'U semantic icon arrow remains allowed');
+
+  // V/W: current authoring plans require composition and all four role arrays.
+  const missingComposition = planFrom({ interactionLanguage: analyzed }); delete missingComposition.interactionComposition;
+  assert.equal(validateInteractionPlan(missingComposition).valid, false, 'V production validator requires interactionComposition for latest authoring plans');
+  for (const role of ['primary', 'secondary', 'continuous', 'restraint']) {
+    const missingRole = planFrom({ interactionLanguage: analyzed }); delete missingRole.interactionComposition[role];
+    assert.equal(validateAuthoring(missingRole).valid, false, `W interactionComposition.${role} is required`);
+  }
+
   await context.close();
 } finally { await browser.close(); }
 
-console.log('interaction authoring A-N contracts: PASS');
+console.log('interaction authoring A-W contracts: PASS');

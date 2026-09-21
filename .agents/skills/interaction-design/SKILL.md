@@ -12,9 +12,9 @@ description: 정적 기준선 이후 근거 기반 상호작용과 모션을 발
 - `reference`: reference state, source annotation, DOM affordance가 권위다. HIGH는 required, MEDIUM은 conservative, LOW는 `skip`한다.
 - `design`: 효과 전에 페이지 단위 motion language를 정한다. 성격, 속도, 선호/금지 family, section entry 변주, pointer/continuous/scroll 원칙을 모두 기록한다.
 
-`npm run qa:interaction-plan -- --url <page> --mode reference|design --output work/interaction-plan.json`을 실행하고 근거를 검토한다. `work/interaction-plan.json`만 SSOT로 유지한다.
+`npm run qa:interaction-plan -- --url <page> --mode reference|design --output work/interaction-plan.json`을 실행하고 근거를 검토한다. `work/interaction-plan.json`만 SSOT로 유지한다. DESIGN_MODE에서는 effective motion language를 authoring보다 먼저 확정하며 primitive는 hard ban → allowed pool → motion preference → interaction-language preference → deterministic fallback 순서로 선택한다.
 
-생성된 plan에는 결정적 DOM 관찰에서 나온 `interactionLanguage`, `actionableAuthoring`, `interactionComposition`, candidate별 `authoring` 계약이 있어야 한다. `coverage.actionable`의 selector가 authoring group에서 빠지거나 반대로 orphan selector가 있으면 실패다. `required-baseline`은 hover/focus-visible/active-tap을 요구하고, `affordance-driven`은 보이는 control의 보수적 state behavior를 요구한다. Behavior authoring과 feedback authoring을 분리한다. `enhanced-motion`은 REFERENCE_MODE에서 충분한 evidence가 없으면 `implementation: skip`만 허용하고, DESIGN_MODE에서는 motionLanguage가 실제 family/primitive 선택을 제한한다. Anti-generic validator는 opacity-only, generic scale/translateY, decorative arrow 반복을 검사한다.
+생성된 plan에는 결정적 DOM 관찰에서 나온 `interactionLanguage`, `actionableAuthoring`, `interactionComposition`, candidate별 `authoring` 계약이 있어야 한다. composition의 primary/secondary/continuous/restraint는 모두 필수이며 continuous motion만 있고 primary가 없으면 실패다. `coverage.actionable`의 selector가 authoring group에서 빠지거나 반대로 orphan selector가 있으면 실패다. `required-baseline`은 hover/focus-visible/active-tap을 요구하고, `affordance-driven`은 보이는 control의 보수적 state behavior를 요구한다. Behavior authoring과 feedback authoring을 분리한다. `enhanced-motion`은 REFERENCE_MODE에서 충분한 evidence가 없으면 `implementation: skip`만 허용하고, DESIGN_MODE에서는 motionLanguage가 실제 family/primitive 선택을 제한한다. Anti-generic validator는 opacity-only, element 수 기준 generic scale, generic translateY, decorative arrow 반복을 검사한다.
 
 ## 라우팅
 

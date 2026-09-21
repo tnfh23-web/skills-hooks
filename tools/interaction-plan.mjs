@@ -21,6 +21,25 @@ function parseArgs(argv) {
 
 const fileUrl = (value) => /^[a-z]+:\/\//i.test(value) ? value : new URL(`file://${path.resolve(value).replaceAll('\\', '/')}`).href;
 
+const DEFAULT_DESIGN_MOTION_LANGUAGE = Object.freeze({
+  character: 'restrained',
+  pace: 'moderate',
+  preferredFamilies: Object.freeze([]),
+  bannedFamilies: Object.freeze(['generic-card-lift', 'all-sections-fade-up']),
+  preferredPrimitives: Object.freeze([]),
+  bannedPrimitives: Object.freeze(['generic-card-lift', 'global-scale-1.05', 'decorative-arrow-default', 'all-elements-opacity-only']),
+  sectionEntryVariation: 'section intent에 따라 2~4개 family 안에서 변주',
+  pointerUsage: 'semantic affordance가 있는 요소에만 제한',
+  continuousMotionUsage: '희소하게 사용하고 정보 전달을 방해하지 않음',
+  scrollStory: '내용의 순차 이해에 필요한 경우만 사용'
+});
+
+function resolveEffectiveMotionLanguage(designMode, motionLanguage) {
+  if (designMode !== 'design') return null;
+  if (motionLanguage) return motionLanguage;
+  return { ...DEFAULT_DESIGN_MOTION_LANGUAGE, preferredFamilies: [...DEFAULT_DESIGN_MOTION_LANGUAGE.preferredFamilies], bannedFamilies: [...DEFAULT_DESIGN_MOTION_LANGUAGE.bannedFamilies], preferredPrimitives: [...DEFAULT_DESIGN_MOTION_LANGUAGE.preferredPrimitives], bannedPrimitives: [...DEFAULT_DESIGN_MOTION_LANGUAGE.bannedPrimitives] };
+}
+
 export function validateInteractionPlan(plan) {
   const errors = [];
   if (!plan || typeof plan !== 'object') return { valid: false, errors: ['plan must be an object'] };
@@ -32,6 +51,8 @@ export function validateInteractionPlan(plan) {
   if (plan.designMode === 'design' && (!plan.motionLanguage || !plan.motionLanguage.character || !plan.motionLanguage.pace || !Array.isArray(plan.motionLanguage.preferredFamilies) || !Array.isArray(plan.motionLanguage.bannedFamilies) || !plan.motionLanguage.sectionEntryVariation || !plan.motionLanguage.pointerUsage || !plan.motionLanguage.continuousMotionUsage || !plan.motionLanguage.scrollStory)) {
     errors.push('DESIGN_MODE requires a complete motionLanguage contract');
   }
+  if (plan.motionLanguage?.preferredPrimitives !== undefined && !Array.isArray(plan.motionLanguage.preferredPrimitives)) errors.push('motionLanguage.preferredPrimitives must be an array when present');
+  if (plan.motionLanguage?.bannedPrimitives !== undefined && !Array.isArray(plan.motionLanguage.bannedPrimitives)) errors.push('motionLanguage.bannedPrimitives must be an array when present');
   const ids = new Set();
   for (const [index, candidate] of (plan.candidates || []).entries()) {
     const at = `candidates[${index}]`;
@@ -69,6 +90,7 @@ function requiredStatesFor(recipe) {
 }
 
 export async function discoverInteractionPlan(page, { designMode = 'reference', sourceRoot = process.cwd(), motionLanguage = null } = {}) {
+  const effectiveMotionLanguage = resolveEffectiveMotionLanguage(designMode, motionLanguage);
   const candidates = await page.evaluate(() => {
     const visible = (node) => {
       const rect = node.getBoundingClientRect(); const style = getComputedStyle(node);
@@ -170,16 +192,16 @@ export async function discoverInteractionPlan(page, { designMode = 'reference', 
   const actionable = await collectActionableInventory(page);
   const interactionLanguage = await analyzeInteractionLanguage(page, { designMode });
   const authored = normalized.map((candidate) => {
-    const authoring = authorInteractionCandidate(candidate, { designMode, interactionLanguage, motionLanguage });
+    const authoring = authorInteractionCandidate(candidate, { designMode, interactionLanguage, motionLanguage: effectiveMotionLanguage });
     return { ...candidate, implementation: authoring.implementation || candidate.implementation, authoring };
   });
-  const actionableAuthoring = await authorActionableInventory(page, actionable, { candidates: authored, interactionLanguage, motionLanguage });
-  const interactionComposition = buildInteractionComposition({ candidates: authored, actionableAuthoring, interactionLanguage });
+  const actionableAuthoring = await authorActionableInventory(page, actionable, { candidates: authored, interactionLanguage, motionLanguage: effectiveMotionLanguage });
+  const interactionComposition = buildInteractionComposition({ candidates: authored, actionableAuthoring, interactionLanguage, motionLanguage: effectiveMotionLanguage });
   const plan = {
     version: 1,
     generatedAt: new Date().toISOString(),
     designMode,
-    motionLanguage: designMode === 'design' ? (motionLanguage || { character: 'restrained', pace: 'moderate', preferredFamilies: [], bannedFamilies: ['generic-card-lift', 'all-sections-fade-up'], sectionEntryVariation: 'section intent에 따라 2~4개 family 안에서 변주', pointerUsage: 'semantic affordance가 있는 요소에만 제한', continuousMotionUsage: '희소하게 사용하고 정보 전달을 방해하지 않음', scrollStory: '내용의 순차 이해에 필요한 경우만 사용' }) : null,
+    motionLanguage: effectiveMotionLanguage,
     interactionLanguage,
     actionableAuthoring,
     interactionComposition,
