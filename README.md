@@ -2,6 +2,46 @@
 
 정적 시안을 픽셀 좌표계로 측정하고 Chromium 결과와 비교하는 로컬 우선 퍼블리싱 워크플로다. 시안은 재설계 대상이 아니라 구현해야 할 웹 인터페이스 상태로 취급한다.
 
+## 전체 시스템 라우팅
+
+완성된 reference가 있으면 기존 Publishing Workflow를 그대로 사용한다. reference가 없을 때만 Design Workflow가 review reference를 만들며, 구현 요청 여부에 따라 handoff 뒤 Publishing으로 이어지거나 design-only로 종료한다. 이 Workflow Router는 DOM interaction pattern을 분류하는 기존 Interaction Router와 별개다.
+
+```mermaid
+flowchart TD
+    REQUEST["사용자 요청 + 제공 자료"] --> ROUTER{"Workflow Router<br/>work/workflow-route.json"}
+    ROUTER -- "완성 reference + faithful 구현" --> RP["REFERENCE_PUBLISH<br/>기존 reference-publish"]
+    ROUTER -- "reference 없음 + 구현 요청" --> DP["DESIGN_AND_PUBLISH<br/>Design Workflow"]
+    ROUTER -- "design-only" --> DO["DESIGN_ONLY<br/>Design Workflow"]
+
+    DP --> PLAN["Design Plan SSOT<br/>brief · Design Read · thesis · dials"]
+    DO --> PLAN
+    PLAN --> PROTO["Review prototype + asset manifest"]
+    PROTO --> CAPTURE["Chromium capture<br/>desktop · tablet · mobile"]
+    CAPTURE --> CRITIC["Visual Critic<br/>critique + contextual AI-TELL audit"]
+    CRITIC --> GATE{"Design Gate<br/>contract evidence only"}
+    GATE -- "FAIL / owner revision ≤ 3" --> PLAN
+    GATE -- "3회 초과" --> BLOCK["DESIGN_BLOCKED"]
+    GATE -- "PASS" --> HANDOFF["DESIGN_READY<br/>frozen handoff"]
+    HANDOFF --> DECIDE{"route"}
+    DECIDE -- "DESIGN_ONLY" --> STOP["STOP<br/>디자인 패키지 전달"]
+    DECIDE -- "DESIGN_AND_PUBLISH" --> BRIDGE["desktop = primary reference<br/>tablet/mobile/plan = responsive intent"]
+    BRIDGE --> RP
+    RP --> PQA["기존 Publishing QA<br/>Visual · Geometry · Responsive<br/>Interaction · Motion · Stop Hook"]
+
+    classDef route fill:#eeeaff,stroke:#8066e8,color:#17131f;
+    classDef design fill:#dff2ff,stroke:#438ac7,color:#111827;
+    classDef gate fill:#fff4cc,stroke:#c69a13,color:#211b08;
+    classDef pass fill:#c9f3dc,stroke:#119b5f,color:#082b1b;
+    classDef fail fill:#ffdede,stroke:#d93636,color:#4a0909;
+    class ROUTER,DECIDE route;
+    class PLAN,PROTO,CAPTURE,CRITIC,BRIDGE design;
+    class GATE gate;
+    class HANDOFF,STOP,PQA pass;
+    class BLOCK fail;
+```
+
+Design 검토 산출물은 Git에서 제외되는 `work/design/`에만 둔다. `tools/design-gate.mjs`는 미적 품질을 추정하지 않고 required artifact, schema, critic/audit PASS, root ownership, revision limit, frozen handoff만 검사한다.
+
 ## 작동 원리와 역할 구조
 
 ```mermaid
