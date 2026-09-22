@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { PNG } from 'pngjs';
 import { decideWorkflowRoute } from '../tools/workflow-router.mjs';
 import { evaluateDesignGate, validateDesignCritique, validateDesignPlan } from '../tools/design-gate.mjs';
 import { createDesignHandoff, PUBLISHING_QA_CHAIN, validateDesignHandoff } from '../tools/design-handoff.mjs';
@@ -59,9 +60,21 @@ function writeJson(file, value) {
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function writeValidPng(file, width = 2, height = 2) {
+  const image = new PNG({ width, height });
+  for (let index = 0; index < image.data.length; index += 4) {
+    image.data[index] = 24;
+    image.data[index + 1] = 48;
+    image.data[index + 2] = 72;
+    image.data[index + 3] = 255;
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, PNG.sync.write(image));
+}
+
 function makeValidPackage(dir, route = 'DESIGN_AND_PUBLISH') {
   fs.mkdirSync(path.join(dir, 'review'), { recursive: true });
-  for (const name of ['desktop', 'tablet', 'mobile']) fs.writeFileSync(path.join(dir, 'review', `${name}.png`), Buffer.from('chromium-review'));
+  for (const name of ['desktop', 'tablet', 'mobile']) writeValidPng(path.join(dir, 'review', `${name}.png`));
   writeJson(path.join(dir, 'design-plan.json'), validPlan());
   writeJson(path.join(dir, 'design-critique.json'), validCritique());
   writeJson(path.join(dir, 'asset-manifest.json'), { version: 1, assets: [] });
@@ -112,17 +125,80 @@ fourthCritique.revisionCount = 4;
 writeJson(path.join(overRevision, 'design-critique.json'), fourthCritique);
 assert.equal(evaluateDesignGate({ designDir: overRevision }).status, 'DESIGN_BLOCKED', 'I: revisionCount over 3 blocks design');
 
-const unfrozen = createDesignHandoff();
+const unfrozenDir = reset('unfrozen');
+const unfrozen = createDesignHandoff({ route: 'DESIGN_AND_PUBLISH', designDir: unfrozenDir });
 unfrozen.designFrozen = false;
 assert.equal(validateDesignHandoff(unfrozen, { forPublishing: true }).valid, false, 'J: unfrozen design cannot enter publishing');
 
 const ready = reset('ready');
 assert.equal(evaluateDesignGate({ designDir: ready, forPublishing: true }).status, 'DESIGN_READY', 'K: complete PASS package becomes DESIGN_READY');
 
-const publishingHandoff = createDesignHandoff({ route: 'DESIGN_AND_PUBLISH' });
+const publishingDir = reset('publishing-handoff');
+const publishingHandoff = createDesignHandoff({ route: 'DESIGN_AND_PUBLISH', designDir: publishingDir });
 assert.equal(publishingHandoff.publishingAdapter.bypassAllowed, false, 'L: publishing QA cannot be bypassed');
 assert.deepEqual(publishingHandoff.publishingAdapter.requiredPublishingQa, PUBLISHING_QA_CHAIN, 'L: existing Publishing QA chain remains required');
 assert.equal(validateDesignHandoff(publishingHandoff, { forPublishing: true }).valid, true, 'L: frozen adapter is valid for existing reference-publish');
 
+const fakePng = reset('fake-png');
+fs.writeFileSync(path.join(fakePng, 'review', 'desktop.png'), Buffer.from('chromium-review'));
+assert.equal(evaluateDesignGate({ designDir: fakePng }).status, 'FAIL', 'M: fake non-PNG review artifact fails');
+assert.throws(
+  () => createDesignHandoff({ route: 'DESIGN_AND_PUBLISH', designDir: fakePng }),
+  /not a decodable PNG/,
+  'M: fake non-PNG review artifact cannot create a handoff'
+);
+
+const validPng = reset('valid-png');
+assert.equal(evaluateDesignGate({ designDir: validPng, forPublishing: true }).status, 'DESIGN_READY', 'N: decodable positive-dimension PNG artifacts are accepted');
+
+for (const route of ['FOO', 'REFERENCE_PUBLISH', undefined]) {
+  assert.throws(() => createDesignHandoff({ route, designDir: validPng }), /Invalid design handoff route/, `O: invalid route ${route} is rejected`);
+}
+
+const reviewBlocked = reset('review-blocked');
+const blockedCritique = validCritique();
+blockedCritique.status = 'DESIGN_REVIEW_BLOCKED';
+blockedCritique.renderedReview = false;
+writeJson(path.join(reviewBlocked, 'design-critique.json'), blockedCritique);
+for (const name of ['desktop', 'tablet', 'mobile']) fs.rmSync(path.join(reviewBlocked, 'review', `${name}.png`));
+assert.equal(validateDesignCritique(blockedCritique).valid, true, 'P: DESIGN_REVIEW_BLOCKED permits renderedReview=false');
+assert.equal(evaluateDesignGate({ designDir: reviewBlocked }).status, 'DESIGN_REVIEW_BLOCKED', 'P: gate preserves DESIGN_REVIEW_BLOCKED');
+assert.throws(
+  () => createDesignHandoff({ route: 'DESIGN_AND_PUBLISH', designDir: reviewBlocked }),
+  /critic status must be PASS/,
+  'P: DESIGN_REVIEW_BLOCKED cannot create a publishing handoff'
+);
+
+const revisionTwo = reset('revision-two-fail');
+const revisionTwoCritique = validCritique();
+revisionTwoCritique.status = 'FAIL';
+revisionTwoCritique.revisionCount = 2;
+writeJson(path.join(revisionTwo, 'design-critique.json'), revisionTwoCritique);
+assert.equal(evaluateDesignGate({ designDir: revisionTwo }).status, 'FAIL', 'Q: revision 2 FAIL remains retryable');
+
+const revisionThreeFail = reset('revision-three-fail');
+const revisionThreeFailCritique = validCritique();
+revisionThreeFailCritique.status = 'FAIL';
+revisionThreeFailCritique.revisionCount = 3;
+writeJson(path.join(revisionThreeFail, 'design-critique.json'), revisionThreeFailCritique);
+assert.equal(evaluateDesignGate({ designDir: revisionThreeFail }).status, 'DESIGN_BLOCKED', 'R: revision 3 FAIL becomes DESIGN_BLOCKED');
+
+const revisionThreePass = reset('revision-three-pass');
+const revisionThreePassCritique = validCritique();
+revisionThreePassCritique.revisionCount = 3;
+writeJson(path.join(revisionThreePass, 'design-critique.json'), revisionThreePassCritique);
+writeJson(path.join(revisionThreePass, 'handoff.json'), createDesignHandoff({ route: 'DESIGN_AND_PUBLISH', designDir: revisionThreePass }));
+assert.equal(evaluateDesignGate({ designDir: revisionThreePass, forPublishing: true }).status, 'DESIGN_READY', 'S: revision 3 PASS remains DESIGN_READY');
+
+const rejectedHandoff = reset('rejected-handoff');
+const rejectedCritique = validCritique();
+rejectedCritique.status = 'FAIL';
+writeJson(path.join(rejectedHandoff, 'design-critique.json'), rejectedCritique);
+assert.throws(
+  () => createDesignHandoff({ route: 'DESIGN_AND_PUBLISH', designDir: rejectedHandoff }),
+  /critic status must be PASS/,
+  'T: actual critique FAIL cannot create DESIGN_READY handoff'
+);
+
 fs.rmSync(testRoot, { recursive: true, force: true });
-console.log('design workflow routing, gate, ownership, freeze, and publishing bridge A-L: PASS');
+console.log('design workflow routing, gate integrity, ownership, freeze, PNG evidence, and publishing bridge A-T: PASS');

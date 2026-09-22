@@ -2,20 +2,78 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { PNG } from 'pngjs';
 
 export const PUBLISHING_QA_CHAIN = Object.freeze([
   'Visual', 'Geometry', 'Responsive', 'Interaction', 'Motion', 'StopHook'
 ]);
+export const DESIGN_HANDOFF_ROUTES = Object.freeze(['DESIGN_ONLY', 'DESIGN_AND_PUBLISH']);
 
-export function createDesignHandoff({ route = 'DESIGN_AND_PUBLISH', designDir = 'work/design' } = {}) {
+function readEvidenceJson(file, label, errors) {
+  if (!fs.existsSync(file)) {
+    errors.push(`${label} is missing: ${file}`);
+    return null;
+  }
+  try {
+    const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!value || typeof value !== 'object' || Array.isArray(value)) errors.push(`${label} must be a JSON object`);
+    return value;
+  } catch (error) {
+    errors.push(`${label} is invalid JSON: ${error.message}`);
+    return null;
+  }
+}
+
+export function validatePngEvidence(file, label = 'review screenshot') {
+  const errors = [];
+  if (!fs.existsSync(file)) return { valid: false, errors: [`${label} is missing: ${file}`] };
+  try {
+    const image = PNG.sync.read(fs.readFileSync(file));
+    if (!Number.isInteger(image.width) || image.width <= 0 || !Number.isInteger(image.height) || image.height <= 0) {
+      errors.push(`${label} must have positive width and height: ${file}`);
+    }
+  } catch (error) {
+    errors.push(`${label} is not a decodable PNG: ${file} (${error.message})`);
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+export function inspectDesignEvidence({ designDir = 'work/design' } = {}) {
+  const root = path.resolve(designDir);
+  const errors = [];
+  const plan = readEvidenceJson(path.join(root, 'design-plan.json'), 'design plan', errors);
+  const critique = readEvidenceJson(path.join(root, 'design-critique.json'), 'design critique', errors);
+  const manifest = readEvidenceJson(path.join(root, 'asset-manifest.json'), 'asset manifest', errors);
+
+  for (const name of ['desktop', 'tablet', 'mobile']) {
+    errors.push(...validatePngEvidence(path.join(root, 'review', `${name}.png`), `${name} review screenshot`).errors);
+  }
+
+  if (critique) {
+    if (critique.status !== 'PASS') errors.push(`critic status must be PASS, received ${critique.status}`);
+    if (critique.renderedReview !== true) errors.push('PASS critique requires renderedReview=true');
+    if (critique.aiTellAudit?.status !== 'PASS') errors.push(`AI-TELL audit must be PASS, received ${critique.aiTellAudit?.status}`);
+    if (!Number.isInteger(critique.revisionCount) || critique.revisionCount < 0) errors.push('revisionCount must be a non-negative integer');
+    else if (critique.revisionCount > 3) errors.push('revisionCount exceeds the maximum of 3');
+    if (!Array.isArray(critique.issues)) errors.push('critique issues must be an array');
+    else if (critique.issues.some((issue) => issue.blocking === true && issue.resolved !== true)) errors.push('unresolved blocking critique issue exists');
+  }
+
+  return { valid: errors.length === 0, errors, root, plan, critique, manifest };
+}
+
+export function createDesignHandoff({ route, designDir = 'work/design' } = {}) {
+  if (!DESIGN_HANDOFF_ROUTES.includes(route)) throw new Error(`Invalid design handoff route: ${route ?? 'undefined'}`);
+  const evidence = inspectDesignEvidence({ designDir });
+  if (!evidence.valid) throw new Error(`Cannot create DESIGN_READY handoff: ${evidence.errors.join('; ')}`);
   const normalized = designDir.replaceAll('\\', '/').replace(/\/$/, '');
   return {
     version: 1,
     status: 'DESIGN_READY',
     source: 'design-workflow',
     designFrozen: true,
-    critic: 'PASS',
-    aiTellAudit: 'PASS',
+    critic: evidence.critique.status,
+    aiTellAudit: evidence.critique.aiTellAudit.status,
     primaryReference: `${normalized}/review/desktop.png`,
     responsiveReferences: {
       tablet: `${normalized}/review/tablet.png`,
@@ -44,6 +102,7 @@ export function validateDesignHandoff(handoff, { forPublishing = false } = {}) {
   if (handoff.version !== 1) errors.push('handoff.version must be 1');
   if (handoff.status !== 'DESIGN_READY') errors.push('handoff.status must be DESIGN_READY');
   if (handoff.source !== 'design-workflow') errors.push('handoff.source must be design-workflow');
+  if (!DESIGN_HANDOFF_ROUTES.includes(handoff.route)) errors.push('handoff.route must be DESIGN_ONLY or DESIGN_AND_PUBLISH');
   if (handoff.designFrozen !== true) errors.push('handoff.designFrozen must be true');
   if (handoff.critic !== 'PASS') errors.push('handoff.critic must be PASS');
   if (handoff.aiTellAudit !== 'PASS') errors.push('handoff.aiTellAudit must be PASS');
@@ -78,7 +137,7 @@ function parseArgs(argv) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const designDir = (args['design-dir'] || 'work/design').replaceAll('\\', '/');
-  const handoff = createDesignHandoff({ route: args.route || 'DESIGN_AND_PUBLISH', designDir });
+  const handoff = createDesignHandoff({ route: args.route, designDir });
   const validation = validateDesignHandoff(handoff, { forPublishing: handoff.route === 'DESIGN_AND_PUBLISH' });
   if (!validation.valid) throw new Error(validation.errors.join('; '));
   const output = path.resolve(args.output || `${designDir}/handoff.json`);

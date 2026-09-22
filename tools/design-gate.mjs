@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { validateDesignHandoff } from './design-handoff.mjs';
+import { validateDesignHandoff, validatePngEvidence } from './design-handoff.mjs';
 
 export const ROOT_OWNERS = Object.freeze([
   'DESIGN_DIRECTOR', 'UI_PLANNER', 'DESIGN_COMPOSER', 'VISUAL_CRITIC'
@@ -57,7 +57,9 @@ export function validateDesignCritique(critique) {
   const errors = [];
   if (!critique || typeof critique !== 'object') return { valid: false, errors: ['design critique must be an object'] };
   if (!['PASS', 'FAIL', 'DESIGN_REVIEW_BLOCKED'].includes(critique.status)) errors.push('design-critique.status is invalid');
-  if (critique.renderedReview !== true) errors.push('design-critique.renderedReview must confirm actual Chromium screenshots');
+  if (critique.status === 'DESIGN_REVIEW_BLOCKED') {
+    if (critique.renderedReview !== false) errors.push('DESIGN_REVIEW_BLOCKED requires renderedReview=false');
+  } else if (critique.renderedReview !== true) errors.push(`${critique.status} critique requires renderedReview=true`);
   if (!Number.isInteger(critique.revisionCount) || critique.revisionCount < 0) errors.push('design-critique.revisionCount must be a non-negative integer');
   if (!['PASS', 'FAIL'].includes(critique.aiTellAudit?.status)) errors.push('design-critique.aiTellAudit.status is invalid');
   if (!Array.isArray(critique.aiTellAudit?.findings)) errors.push('design-critique.aiTellAudit.findings must be an array');
@@ -75,10 +77,6 @@ function readJson(file, label, errors) {
   catch (error) { errors.push(`${label} is invalid JSON: ${error.message}`); return null; }
 }
 
-function requireNonEmptyFile(file, label, errors) {
-  if (!fs.existsSync(file) || fs.statSync(file).size === 0) errors.push(`${label} is missing: ${file}`);
-}
-
 export function evaluateDesignGate({ designDir = 'work/design', forPublishing = false } = {}) {
   const root = path.resolve(designDir);
   const errors = [];
@@ -86,7 +84,9 @@ export function evaluateDesignGate({ designDir = 'work/design', forPublishing = 
   const critique = readJson(path.join(root, 'design-critique.json'), 'design critique', errors);
   const manifest = readJson(path.join(root, 'asset-manifest.json'), 'asset manifest', errors);
   const handoff = readJson(path.join(root, 'handoff.json'), 'design handoff', errors);
-  for (const name of ['desktop', 'tablet', 'mobile']) requireNonEmptyFile(path.join(root, 'review', `${name}.png`), `${name} review screenshot`, errors);
+  for (const name of ['desktop', 'tablet', 'mobile']) {
+    errors.push(...validatePngEvidence(path.join(root, 'review', `${name}.png`), `${name} review screenshot`).errors);
+  }
 
   if (plan) errors.push(...validateDesignPlan(plan).errors);
   if (manifest && (manifest.version !== 1 || !Array.isArray(manifest.assets))) errors.push('asset manifest requires version 1 and assets array');
@@ -100,9 +100,10 @@ export function evaluateDesignGate({ designDir = 'work/design', forPublishing = 
   if (handoff) errors.push(...validateDesignHandoff(handoff, { forPublishing }).errors);
 
   const revisionCount = critique?.revisionCount;
-  const status = Number.isInteger(revisionCount) && revisionCount > 3
-    ? 'DESIGN_BLOCKED'
-    : errors.length ? 'FAIL' : 'DESIGN_READY';
+  let status;
+  if (critique?.status === 'DESIGN_REVIEW_BLOCKED') status = 'DESIGN_REVIEW_BLOCKED';
+  else if (Number.isInteger(revisionCount) && (revisionCount > 3 || (revisionCount >= 3 && critique?.status === 'FAIL'))) status = 'DESIGN_BLOCKED';
+  else status = errors.length ? 'FAIL' : 'DESIGN_READY';
   return { version: 1, status, designDir: root, revisionCount: revisionCount ?? null, errors };
 }
 
