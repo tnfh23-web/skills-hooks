@@ -13,13 +13,17 @@ flowchart TD
     ROUTER -- "reference 없음 + 구현 요청" --> DP["DESIGN_AND_PUBLISH<br/>Design Workflow"]
     ROUTER -- "design-only" --> DO["DESIGN_ONLY<br/>Design Workflow"]
 
-    DP --> PLAN["Design Plan SSOT<br/>brief · Design Read · thesis · dials"]
-    DO --> PLAN
-    PLAN --> PROTO["Review prototype + asset manifest"]
-    PROTO --> CAPTURE["Chromium capture<br/>desktop · tablet · mobile"]
-    CAPTURE --> CRITIC["Visual Critic<br/>critique + contextual AI-TELL audit"]
+    DP --> DIRECTOR["Design Director<br/>brief · Design Read · thesis · dials"]
+    DO --> DIRECTOR
+    DIRECTOR --> ART["Design Art Director<br/>media · crop · scale · depth"]
+    ART --> PLAN["UI Planner<br/>section composition contract"]
+    PLAN --> VREF["Visual Reference<br/>section-specific visual evidence"]
+    VREF --> VCRITIC["Visual Critic<br/>reference approval"]
+    VCRITIC --> PROTO["Design Composer<br/>reference → review prototype"]
+    PROTO --> CAPTURE["Rendered Review<br/>desktop · tablet · mobile<br/>fidelity + production value"]
+    CAPTURE --> CRITIC["Visual Critic<br/>fidelity · production value · AI-TELL"]
     CRITIC --> GATE{"Design Gate<br/>contract evidence only"}
-    GATE -- "FAIL / owner revision ≤ 3" --> PLAN
+    GATE -- "FAIL / owner revision ≤ 3" --> DIRECTOR
     GATE -- "3회 초과" --> BLOCK["DESIGN_BLOCKED"]
     GATE -- "PASS" --> HANDOFF["DESIGN_READY<br/>frozen handoff"]
     HANDOFF --> DECIDE{"route"}
@@ -34,13 +38,13 @@ flowchart TD
     classDef pass fill:#c9f3dc,stroke:#119b5f,color:#082b1b;
     classDef fail fill:#ffdede,stroke:#d93636,color:#4a0909;
     class ROUTER,DECIDE route;
-    class PLAN,PROTO,CAPTURE,CRITIC,BRIDGE design;
+    class DIRECTOR,ART,PLAN,VREF,VCRITIC,PROTO,CAPTURE,CRITIC,BRIDGE design;
     class GATE gate;
     class HANDOFF,STOP,PQA pass;
     class BLOCK fail;
 ```
 
-Design 검토 산출물은 Git에서 제외되는 `work/design/`에만 둔다. `tools/design-gate.mjs`는 미적 품질을 추정하지 않고 required artifact, schema, critic/audit PASS, root ownership, revision limit, frozen handoff만 검사한다.
+Design 검토 산출물은 Git에서 제외되는 `work/design/`에만 둔다. visual-first 단계는 `visual-direction.json`, section reference manifest와 선행 Critic review를 production prototype보다 먼저 확정한다. image generation capability가 실제로 없으면 `VISUAL_REFERENCE_TOOL_UNAVAILABLE`을 기록하며, 생성 brief 경로는 Composer를 차단하고 local composition prototype 경로는 실제 artifact와 limitation을 요구한다. `tools/design-gate.mjs`는 미적 품질을 추정하지 않고 required artifact, schema, critic/audit PASS, root ownership, revision limit, frozen handoff만 검사한다.
 
 ## 작동 원리와 역할 구조
 

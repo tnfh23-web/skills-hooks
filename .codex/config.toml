@@ -11,8 +11,12 @@ default_subagent_reasoning_effort = "medium"
 description = "근거 기반 Design Read와 design thesis를 확정한다."
 config_file = "agents/design-director.toml"
 
+[agents.design_art_director]
+description = "Design thesis를 실제 visual art direction과 media strategy로 변환한다."
+config_file = "agents/design-art-director.toml"
+
 [agents.design_ui_planner]
-description = "Design Plan의 visual language와 section composition을 설계한다."
+description = "승인된 visual art direction을 Design Plan의 section composition으로 구체화한다."
 config_file = "agents/design-ui-planner.toml"
 
 [agents.design_composer]

@@ -3,6 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
+import { inspectVisualReferenceEvidence, validateRenderedVisualAudit } from './design-visual-reference.mjs';
 
 export const PUBLISHING_QA_CHAIN = Object.freeze([
   'Visual', 'Geometry', 'Responsive', 'Interaction', 'Motion', 'StopHook'
@@ -44,22 +45,31 @@ export function inspectDesignEvidence({ designDir = 'work/design' } = {}) {
   const plan = readEvidenceJson(path.join(root, 'design-plan.json'), 'design plan', errors);
   const critique = readEvidenceJson(path.join(root, 'design-critique.json'), 'design critique', errors);
   const manifest = readEvidenceJson(path.join(root, 'asset-manifest.json'), 'asset manifest', errors);
+  const visualEvidence = inspectVisualReferenceEvidence({
+    designDir: root,
+    pageKind: plan?.designRead?.pageKind || ''
+  });
+  errors.push(...visualEvidence.errors);
+  if (!visualEvidence.composerReady) errors.push(`visual reference is not approved for Design Composer (${visualEvidence.status})`);
 
   for (const name of ['desktop', 'tablet', 'mobile']) {
     errors.push(...validatePngEvidence(path.join(root, 'review', `${name}.png`), `${name} review screenshot`).errors);
   }
 
   if (critique) {
+    errors.push(...validateRenderedVisualAudit(critique).errors);
     if (critique.status !== 'PASS') errors.push(`critic status must be PASS, received ${critique.status}`);
     if (critique.renderedReview !== true) errors.push('PASS critique requires renderedReview=true');
     if (critique.aiTellAudit?.status !== 'PASS') errors.push(`AI-TELL audit must be PASS, received ${critique.aiTellAudit?.status}`);
+    if (critique.productionValueAudit?.status !== 'PASS') errors.push(`visual production value audit must be PASS, received ${critique.productionValueAudit?.status}`);
+    if (critique.visualFidelityReview?.status !== 'PASS') errors.push(`visual fidelity review must be PASS, received ${critique.visualFidelityReview?.status}`);
     if (!Number.isInteger(critique.revisionCount) || critique.revisionCount < 0) errors.push('revisionCount must be a non-negative integer');
     else if (critique.revisionCount > 3) errors.push('revisionCount exceeds the maximum of 3');
     if (!Array.isArray(critique.issues)) errors.push('critique issues must be an array');
     else if (critique.issues.some((issue) => issue.blocking === true && issue.resolved !== true)) errors.push('unresolved blocking critique issue exists');
   }
 
-  return { valid: errors.length === 0, errors, root, plan, critique, manifest };
+  return { valid: errors.length === 0, errors, root, plan, critique, manifest, visualEvidence };
 }
 
 export function createDesignHandoff({ route, designDir = 'work/design' } = {}) {
@@ -74,6 +84,7 @@ export function createDesignHandoff({ route, designDir = 'work/design' } = {}) {
     designFrozen: true,
     critic: evidence.critique.status,
     aiTellAudit: evidence.critique.aiTellAudit.status,
+    productionValueAudit: evidence.critique.productionValueAudit.status,
     primaryReference: `${normalized}/review/desktop.png`,
     responsiveReferences: {
       tablet: `${normalized}/review/tablet.png`,
@@ -81,6 +92,12 @@ export function createDesignHandoff({ route, designDir = 'work/design' } = {}) {
     },
     designPlan: `${normalized}/design-plan.json`,
     assetManifest: `${normalized}/asset-manifest.json`,
+    visualIntent: {
+      visualDirection: `${normalized}/visual-reference/visual-direction.json`,
+      sectionReferences: `${normalized}/visual-reference/section-reference-manifest.json`,
+      visualReferenceReview: `${normalized}/visual-reference/visual-reference-review.json`,
+      strategyStatus: evidence.visualEvidence.direction.referenceStrategy.status
+    },
     route,
     publishingAdapter: route === 'DESIGN_AND_PUBLISH' ? {
       workflow: 'reference-publish',
@@ -88,7 +105,11 @@ export function createDesignHandoff({ route, designDir = 'work/design' } = {}) {
       responsiveIntent: {
         tabletReference: `${normalized}/review/tablet.png`,
         mobileReference: `${normalized}/review/mobile.png`,
-        designPlan: `${normalized}/design-plan.json`
+        designPlan: `${normalized}/design-plan.json`,
+        visualIntent: {
+          visualDirection: `${normalized}/visual-reference/visual-direction.json`,
+          sectionReferences: `${normalized}/visual-reference/section-reference-manifest.json`
+        }
       },
       requiredPublishingQa: [...PUBLISHING_QA_CHAIN],
       bypassAllowed: false
@@ -106,16 +127,22 @@ export function validateDesignHandoff(handoff, { forPublishing = false } = {}) {
   if (handoff.designFrozen !== true) errors.push('handoff.designFrozen must be true');
   if (handoff.critic !== 'PASS') errors.push('handoff.critic must be PASS');
   if (handoff.aiTellAudit !== 'PASS') errors.push('handoff.aiTellAudit must be PASS');
+  if (handoff.productionValueAudit !== 'PASS') errors.push('handoff.productionValueAudit must be PASS');
   for (const field of ['primaryReference', 'designPlan', 'assetManifest']) {
     if (typeof handoff[field] !== 'string' || !handoff[field]) errors.push(`handoff.${field} is required`);
   }
   for (const name of ['tablet', 'mobile']) {
     if (typeof handoff.responsiveReferences?.[name] !== 'string') errors.push(`handoff.responsiveReferences.${name} is required`);
   }
+  for (const field of ['visualDirection', 'sectionReferences', 'visualReferenceReview', 'strategyStatus']) {
+    if (typeof handoff.visualIntent?.[field] !== 'string' || !handoff.visualIntent[field]) errors.push(`handoff.visualIntent.${field} is required`);
+  }
   if (forPublishing) {
     if (handoff.route !== 'DESIGN_AND_PUBLISH') errors.push('publishing requires DESIGN_AND_PUBLISH route');
     if (handoff.publishingAdapter?.workflow !== 'reference-publish') errors.push('publishing adapter must target reference-publish');
     if (handoff.publishingAdapter?.bypassAllowed !== false) errors.push('publishing QA bypass must be disabled');
+    if (typeof handoff.publishingAdapter?.responsiveIntent?.visualIntent?.visualDirection !== 'string') errors.push('publishing adapter requires visual direction intent');
+    if (typeof handoff.publishingAdapter?.responsiveIntent?.visualIntent?.sectionReferences !== 'string') errors.push('publishing adapter requires section reference intent');
     const required = handoff.publishingAdapter?.requiredPublishingQa || [];
     for (const qa of PUBLISHING_QA_CHAIN) if (!required.includes(qa)) errors.push(`publishing adapter requires ${qa}`);
   }

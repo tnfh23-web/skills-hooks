@@ -3,9 +3,10 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { validateDesignHandoff, validatePngEvidence } from './design-handoff.mjs';
+import { inspectVisualReferenceEvidence, validateRenderedVisualAudit } from './design-visual-reference.mjs';
 
 export const ROOT_OWNERS = Object.freeze([
-  'DESIGN_DIRECTOR', 'UI_PLANNER', 'DESIGN_COMPOSER', 'VISUAL_CRITIC'
+  'DESIGN_DIRECTOR', 'DESIGN_ART_DIRECTOR', 'UI_PLANNER', 'DESIGN_COMPOSER', 'VISUAL_CRITIC'
 ]);
 
 const PLAN_FIELDS = [
@@ -20,7 +21,8 @@ const DESIGN_READ_FIELDS = [
 const SECTION_FIELDS = [
   'role', 'contentPriority', 'compositionLogic', 'visualAnchor', 'layoutTension',
   'relationshipToPrevious', 'relationshipToNext', 'interactionOpportunity',
-  'entryBehavior', 'restraint'
+  'entryBehavior', 'restraint', 'sectionRole', 'mediaRole', 'compositionAnchor',
+  'scaleContrast', 'depthMode', 'backgroundMode', 'transitionIntent'
 ];
 const MOTION_FIELDS = [
   'motionCharacter', 'primaryMovement', 'secondaryMovement', 'continuousMovement',
@@ -63,6 +65,7 @@ export function validateDesignCritique(critique) {
   if (!Number.isInteger(critique.revisionCount) || critique.revisionCount < 0) errors.push('design-critique.revisionCount must be a non-negative integer');
   if (!['PASS', 'FAIL'].includes(critique.aiTellAudit?.status)) errors.push('design-critique.aiTellAudit.status is invalid');
   if (!Array.isArray(critique.aiTellAudit?.findings)) errors.push('design-critique.aiTellAudit.findings must be an array');
+  errors.push(...validateRenderedVisualAudit(critique).errors);
   if (!Array.isArray(critique.issues)) errors.push('design-critique.issues must be an array');
   else critique.issues.forEach((issue, index) => {
     if (!ROOT_OWNERS.includes(issue?.rootOwner)) errors.push(`design-critique.issues[${index}].rootOwner is invalid`);
@@ -84,6 +87,12 @@ export function evaluateDesignGate({ designDir = 'work/design', forPublishing = 
   const critique = readJson(path.join(root, 'design-critique.json'), 'design critique', errors);
   const manifest = readJson(path.join(root, 'asset-manifest.json'), 'asset manifest', errors);
   const handoff = readJson(path.join(root, 'handoff.json'), 'design handoff', errors);
+  const visualEvidence = inspectVisualReferenceEvidence({
+    designDir: root,
+    pageKind: plan?.designRead?.pageKind || ''
+  });
+  errors.push(...visualEvidence.errors);
+  if (!visualEvidence.composerReady) errors.push(`visual reference is not approved for Design Composer (${visualEvidence.status})`);
   for (const name of ['desktop', 'tablet', 'mobile']) {
     errors.push(...validatePngEvidence(path.join(root, 'review', `${name}.png`), `${name} review screenshot`).errors);
   }
@@ -94,6 +103,8 @@ export function evaluateDesignGate({ designDir = 'work/design', forPublishing = 
     errors.push(...validateDesignCritique(critique).errors);
     if (critique.status !== 'PASS') errors.push(`critic status is ${critique.status}`);
     if (critique.aiTellAudit?.status !== 'PASS') errors.push('AI-TELL audit did not PASS');
+    if (critique.productionValueAudit?.status !== 'PASS') errors.push('visual production value audit did not PASS');
+    if (critique.visualFidelityReview?.status !== 'PASS') errors.push('visual fidelity review did not PASS');
     const unresolved = Array.isArray(critique.issues) ? critique.issues.filter((issue) => issue.blocking === true && issue.resolved !== true) : [];
     if (unresolved.length) errors.push(`${unresolved.length} unresolved blocking critique issue(s)`);
   }
@@ -101,7 +112,8 @@ export function evaluateDesignGate({ designDir = 'work/design', forPublishing = 
 
   const revisionCount = critique?.revisionCount;
   let status;
-  if (critique?.status === 'DESIGN_REVIEW_BLOCKED') status = 'DESIGN_REVIEW_BLOCKED';
+  if (visualEvidence.status === 'VISUAL_REFERENCE_TOOL_UNAVAILABLE') status = 'VISUAL_REFERENCE_TOOL_UNAVAILABLE';
+  else if (critique?.status === 'DESIGN_REVIEW_BLOCKED') status = 'DESIGN_REVIEW_BLOCKED';
   else if (Number.isInteger(revisionCount) && (revisionCount > 3 || (revisionCount >= 3 && critique?.status === 'FAIL'))) status = 'DESIGN_BLOCKED';
   else status = errors.length ? 'FAIL' : 'DESIGN_READY';
   return { version: 1, status, designDir: root, revisionCount: revisionCount ?? null, errors };

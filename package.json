@@ -12,6 +12,7 @@
     "qa:interaction-plan:validate": "node tools/interaction-plan.mjs",
     "qa:interaction": "node tools/interaction-qa.mjs",
     "qa:motion": "node tools/motion-qa.mjs",
+    "design:visual-reference:validate": "node tools/design-visual-reference.mjs",
     "test:qa": "node tests/qa-contract.test.mjs",
     "test:syntax": "node tests/syntax.test.mjs",
     "test:hook": "node tests/hook.test.mjs",

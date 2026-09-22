@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
-const files = ['tools/visual-qa.mjs', 'tools/source-fingerprint.mjs', 'tools/reference-measure.mjs', 'tools/reference-spec.mjs', 'tools/geometry-qa.mjs', 'tools/responsive-qa.mjs', 'tools/interaction-patterns.mjs', 'tools/interaction-coverage.mjs', 'tools/interaction-authoring.mjs', 'tools/interaction-plan.mjs', 'tools/interaction-qa.mjs', 'tools/motion-qa.mjs', 'tools/qa-run.mjs', 'tools/workflow-router.mjs', 'tools/design-capture.mjs', 'tools/design-gate.mjs', 'tools/design-handoff.mjs', '.codex/hooks/stop-reference-publish.mjs'];
+const files = ['tools/visual-qa.mjs', 'tools/source-fingerprint.mjs', 'tools/reference-measure.mjs', 'tools/reference-spec.mjs', 'tools/geometry-qa.mjs', 'tools/responsive-qa.mjs', 'tools/interaction-patterns.mjs', 'tools/interaction-coverage.mjs', 'tools/interaction-authoring.mjs', 'tools/interaction-plan.mjs', 'tools/interaction-qa.mjs', 'tools/motion-qa.mjs', 'tools/qa-run.mjs', 'tools/workflow-router.mjs', 'tools/design-capture.mjs', 'tools/design-visual-reference.mjs', 'tools/design-gate.mjs', 'tools/design-handoff.mjs', '.codex/hooks/stop-reference-publish.mjs'];
 for (const file of files) {
   execFileSync(process.execPath, ['--check', file], { stdio: 'pipe' });
   assert.ok(fs.existsSync(file), `${file} should exist`);
@@ -19,6 +19,7 @@ const agentExpectations = new Map([
   ['debugger.toml', ['gpt-5.6-terra', 'high']],
   ['explorer.toml', ['gpt-5.6-terra', 'medium']],
   ['design-director.toml', ['gpt-5.6-sol', 'high']],
+  ['design-art-director.toml', ['gpt-5.6-sol', 'high']],
   ['design-ui-planner.toml', ['gpt-5.6-sol', 'high']],
   ['design-composer.toml', ['gpt-5.6-luna', 'medium']],
   ['design-visual-critic.toml', ['gpt-5.6-sol', 'high']]
@@ -32,7 +33,9 @@ for (const [file, [model, effort]] of agentExpectations) {
 const skillExpectations = new Map([
   ['.agents/skills/workflow-router/SKILL.md', 'workflow-router'],
   ['.agents/skills/design-workflow/SKILL.md', 'design-workflow'],
-  ['.agents/skills/design-handoff/SKILL.md', 'design-handoff']
+  ['.agents/skills/design-handoff/SKILL.md', 'design-handoff'],
+  ['.agents/skills/design-art-direction/SKILL.md', 'design-art-direction'],
+  ['.agents/skills/visual-reference-design/SKILL.md', 'visual-reference-design']
 ]);
 for (const [file, name] of skillExpectations) {
   const markdown = fs.readFileSync(file, 'utf8');
