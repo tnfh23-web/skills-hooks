@@ -9,20 +9,20 @@ for (const file of files) {
 }
 JSON.parse(fs.readFileSync('.codex/hooks.json', 'utf8'));
 const config = fs.readFileSync('.codex/config.toml', 'utf8');
-assert.match(config, /model = "gpt-5\.6-sol"/);
+assert.match(config, /model = "gpt-6-sol"/);
 assert.match(config, /\[agents\]/);
 const agentExpectations = new Map([
-  ['planner-design-director.toml', ['gpt-5.6-sol', 'high']],
-  ['verifier-visual-critic.toml', ['gpt-5.6-sol', 'high']],
-  ['general-ui-coder.toml', ['gpt-5.6-luna', 'medium']],
-  ['motion-coder.toml', ['gpt-5.6-terra', 'high']],
-  ['debugger.toml', ['gpt-5.6-terra', 'high']],
-  ['explorer.toml', ['gpt-5.6-terra', 'medium']],
-  ['design-director.toml', ['gpt-5.6-sol', 'high']],
-  ['design-art-director.toml', ['gpt-5.6-sol', 'high']],
-  ['design-ui-planner.toml', ['gpt-5.6-sol', 'high']],
-  ['design-composer.toml', ['gpt-5.6-luna', 'medium']],
-  ['design-visual-critic.toml', ['gpt-5.6-sol', 'high']]
+  ['planner-design-director.toml', ['gpt-6-sol', 'high']],
+  ['verifier-visual-critic.toml', ['gpt-6-sol', 'high']],
+  ['general-ui-coder.toml', ['gpt-6-luna', 'high']],
+  ['motion-coder.toml', ['gpt-6-sol', 'high']],
+  ['debugger.toml', ['gpt-6-sol', 'high']],
+  ['explorer.toml', ['gpt-6-luna', 'medium']],
+  ['design-director.toml', ['gpt-6-sol', 'high']],
+  ['design-art-director.toml', ['gpt-6-sol', 'high']],
+  ['design-ui-planner.toml', ['gpt-6-sol', 'high']],
+  ['design-composer.toml', ['gpt-6-luna', 'high']],
+  ['design-visual-critic.toml', ['gpt-6-sol', 'high']]
 ]);
 for (const [file, [model, effort]] of agentExpectations) {
   const toml = fs.readFileSync(`.codex/agents/${file}`, 'utf8');

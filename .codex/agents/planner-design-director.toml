@@ -1,6 +1,6 @@
 name = "planner_design_director"
 description = "레퍼런스 근거, interaction plan, motion language와 패턴 라우팅을 설계한다."
-model = "gpt-5.6-sol"
+model = "gpt-6-sol"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """
