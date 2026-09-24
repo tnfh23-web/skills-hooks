@@ -34,6 +34,38 @@ const VISUAL_DIRECTION_FIELDS = [
 const MEDIA_FIELDS = ['dominance', 'role', 'source', 'treatment', 'primaryMedium', 'rationale'];
 const COMPOSITION_FIELDS = ['hero', 'sectionAnchors', 'scaleRhythm', 'depthStrategy'];
 
+function normalizedArtifactPath(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const slashed = value.trim().replaceAll('\\', '/');
+  if (slashed.startsWith('/') || /^[a-zA-Z]:\//.test(slashed)) return null;
+  const normalized = path.posix.normalize(slashed);
+  return normalized.startsWith('visual-reference/') && normalized !== 'visual-reference/'
+    ? normalized : null;
+}
+
+export function validateVisualReferenceSections(plan) {
+  const errors = [];
+  if (!Array.isArray(plan?.sectionPlan) || plan.sectionPlan.length === 0) {
+    return { valid: false, errors: ['design-plan.sectionPlan requires at least one section'] };
+  }
+  const ids = new Set();
+  plan.sectionPlan.forEach((section, index) => {
+    const label = `design-plan.sectionPlan[${index}]`;
+    if (typeof section?.sectionId !== 'string' || !section.sectionId.trim() || section.sectionId !== section.sectionId.trim()) {
+      errors.push(`${label}.sectionId must be a non-empty trimmed string`);
+    }
+    else if (ids.has(section.sectionId)) errors.push(`${label}.sectionId is duplicated: ${section.sectionId}`);
+    else ids.add(section.sectionId);
+    if (typeof section?.visualReference?.required !== 'boolean') {
+      errors.push(`${label}.visualReference.required must be a boolean`);
+    }
+    if (typeof section?.visualReference?.reason !== 'string' || !section.visualReference.reason.trim()) {
+      errors.push(`${label}.visualReference.reason is required`);
+    }
+  });
+  return { valid: errors.length === 0, errors };
+}
+
 function populated(value) {
   if (value === null || value === undefined) return false;
   if (typeof value === 'string') return value.trim().length > 0;
@@ -123,10 +155,16 @@ export function validateVisualDirection(direction, { pageKind = '' } = {}) {
   if (strategy?.mode === 'GENERATED_SECTION_REFERENCES' && strategy?.capability !== 'AVAILABLE') {
     errors.push('generated section references require an available image generation capability');
   }
+  if (strategy?.mode === 'GENERATED_SECTION_REFERENCES') {
+    const evidence = strategy.capabilityEvidence;
+    if (evidence?.source !== 'active-session-tool') errors.push('generated references require capabilityEvidence.source=active-session-tool');
+    if (typeof evidence?.tool !== 'string' || !evidence.tool.trim()) errors.push('generated references require capabilityEvidence.tool');
+    if (evidence?.verified !== true) errors.push('generated references require capabilityEvidence.verified=true');
+  }
   return { valid: errors.length === 0, errors, visualHeavy };
 }
 
-export function validateSectionReferenceManifest(manifest, direction) {
+export function validateSectionReferenceManifest(manifest, direction, plan) {
   const errors = [];
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
     return { valid: false, errors: ['section reference manifest must be an object'] };
@@ -138,17 +176,42 @@ export function validateSectionReferenceManifest(manifest, direction) {
   if (!Array.isArray(manifest.sections) || manifest.sections.length === 0) {
     errors.push('section reference manifest requires at least one section artifact');
   } else {
+    const planSections = new Map(Array.isArray(plan?.sectionPlan)
+      ? plan.sectionPlan.filter((section) => populated(section?.sectionId)).map((section) => [section.sectionId, section]) : []);
+    const covered = new Set();
+    const artifactPaths = new Set();
     manifest.sections.forEach((section, index) => {
       for (const field of ['sectionId', 'role', 'artifact', 'evidenceType']) {
         if (!populated(section?.[field])) errors.push(`section-reference-manifest.sections[${index}].${field} is required`);
       }
+      if (typeof section?.sectionId !== 'string' || section.sectionId !== section.sectionId.trim()) {
+        errors.push(`section-reference-manifest.sections[${index}].sectionId must be a trimmed string`);
+      }
       if (section?.reviewable !== true) errors.push(`section-reference-manifest.sections[${index}].reviewable must be true`);
+      if (populated(section?.sectionId)) {
+        if (!planSections.has(section.sectionId)) errors.push(`manifest orphan sectionId: ${section.sectionId}`);
+        covered.add(section.sectionId);
+      }
+      const normalized = normalizedArtifactPath(section?.artifact);
+      if (!normalized) errors.push(`section-reference-manifest.sections[${index}].artifact must stay under visual-reference`);
+      else if (artifactPaths.has(normalized)) errors.push(`manifest duplicate artifact: ${section.artifact}`);
+      else artifactPaths.add(normalized);
+      if (direction?.referenceStrategy?.mode === 'GENERATED_SECTION_REFERENCES') {
+        if (section?.evidenceType !== 'generated-section-reference') errors.push(`generated artifact ${index} requires generated-section-reference evidenceType`);
+        if (section?.provenance?.source !== 'image-generation') errors.push(`generated artifact ${index} requires provenance.source=image-generation`);
+        if (section?.provenance?.verified !== true) errors.push(`generated artifact ${index} requires provenance.verified=true`);
+      }
     });
+    for (const section of planSections.values()) {
+      if (section.visualReference?.required === true && !covered.has(section.sectionId)) {
+        errors.push(`required visual reference is missing for sectionId: ${section.sectionId}`);
+      }
+    }
   }
   return { valid: errors.length === 0, errors };
 }
 
-export function validateVisualReferenceReview(review, direction) {
+export function validateVisualReferenceReview(review, direction, manifest) {
   const errors = [];
   if (!review || typeof review !== 'object' || Array.isArray(review)) {
     return { valid: false, errors: ['visual reference review must be an object'] };
@@ -156,6 +219,19 @@ export function validateVisualReferenceReview(review, direction) {
   if (review.version !== 1) errors.push('visual reference review version must be 1');
   if (!Array.isArray(review.reviewedArtifacts) || review.reviewedArtifacts.length === 0) {
     errors.push('visual reference review requires reviewedArtifacts');
+  } else if (Array.isArray(manifest?.sections)) {
+    const expected = new Set(manifest.sections.filter((section) => section?.reviewable === true)
+      .map((section) => normalizedArtifactPath(section.artifact)).filter(Boolean));
+    const reviewed = new Set();
+    review.reviewedArtifacts.forEach((artifact) => {
+      const normalized = normalizedArtifactPath(artifact);
+      if (!normalized || !expected.has(normalized)) errors.push(`reviewed artifact is not in manifest: ${artifact}`);
+      else if (reviewed.has(normalized)) errors.push(`reviewed artifact is duplicated: ${artifact}`);
+      else reviewed.add(normalized);
+    });
+    for (const artifact of expected) {
+      if (!reviewed.has(artifact)) errors.push(`reviewable manifest artifact was not reviewed: ${artifact}`);
+    }
   }
   if (!Array.isArray(review.issues)) errors.push('visual reference review issues must be an array');
   const unavailableBrief = direction?.referenceStrategy?.capability === 'UNAVAILABLE'
@@ -209,18 +285,22 @@ export function inspectVisualReferenceEvidence({ designDir = 'work/design', page
   const root = path.resolve(designDir);
   const visualRoot = path.join(root, 'visual-reference');
   const errors = [];
+  const plan = readJson(path.join(root, 'design-plan.json'), 'design plan', errors);
   const direction = readJson(path.join(visualRoot, 'visual-direction.json'), 'visual direction', errors);
   const manifest = readJson(path.join(visualRoot, 'section-reference-manifest.json'), 'section reference manifest', errors);
   const review = readJson(path.join(visualRoot, 'visual-reference-review.json'), 'visual reference review', errors);
-  if (direction) errors.push(...validateVisualDirection(direction, { pageKind }).errors);
-  if (manifest) errors.push(...validateSectionReferenceManifest(manifest, direction).errors);
-  const reviewResult = review ? validateVisualReferenceReview(review, direction) : { composerReady: false, errors: [] };
+  if (plan) errors.push(...validateVisualReferenceSections(plan).errors);
+  if (direction) errors.push(...validateVisualDirection(direction, { pageKind: pageKind || plan?.designRead?.pageKind || '' }).errors);
+  if (manifest) errors.push(...validateSectionReferenceManifest(manifest, direction, plan).errors);
+  const reviewResult = review ? validateVisualReferenceReview(review, direction, manifest) : { composerReady: false, errors: [] };
   if (review) errors.push(...reviewResult.errors);
 
   if (Array.isArray(manifest?.sections)) {
     manifest.sections.forEach((section, index) => {
       if (!populated(section?.artifact)) return;
-      const artifact = path.resolve(root, section.artifact);
+      const normalized = normalizedArtifactPath(section.artifact);
+      if (!normalized) return;
+      const artifact = path.resolve(root, ...normalized.split('/'));
       const relative = path.relative(visualRoot, artifact);
       if (relative.startsWith('..') || path.isAbsolute(relative)) {
         errors.push(`section reference artifact must stay under visual-reference: ${section.artifact}`);
@@ -238,6 +318,7 @@ export function inspectVisualReferenceEvidence({ designDir = 'work/design', page
     status: unavailableBrief ? 'VISUAL_REFERENCE_TOOL_UNAVAILABLE' : (errors.length ? 'FAIL' : 'READY'),
     errors,
     root,
+    plan,
     direction,
     manifest,
     review

@@ -3,7 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { validateDesignHandoff, validatePngEvidence } from './design-handoff.mjs';
-import { inspectVisualReferenceEvidence, validateRenderedVisualAudit } from './design-visual-reference.mjs';
+import { inspectVisualReferenceEvidence, validateRenderedVisualAudit, validateVisualReferenceSections } from './design-visual-reference.mjs';
 
 export const ROOT_OWNERS = Object.freeze([
   'DESIGN_DIRECTOR', 'DESIGN_ART_DIRECTOR', 'UI_PLANNER', 'DESIGN_COMPOSER', 'VISUAL_CRITIC'
@@ -51,6 +51,7 @@ export function validateDesignPlan(plan) {
       for (const field of SECTION_FIELDS) if (!populated(section?.[field])) errors.push(`design-plan.sectionPlan[${index}].${field} is required`);
     });
   }
+  errors.push(...validateVisualReferenceSections(plan).errors);
   for (const field of MOTION_FIELDS) if (!populated(plan.motionDirection?.[field])) errors.push(`design-plan.motionDirection.${field} is required`);
   return { valid: errors.length === 0, errors };
 }

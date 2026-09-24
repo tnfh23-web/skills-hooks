@@ -14,8 +14,8 @@ description: production 코드보다 먼저 section별 visual reference를 만�
 3. 사용할 수 없으면 `VISUAL_REFERENCE_TOOL_UNAVAILABLE`을 보존하고 둘 중 하나를 명시적으로 선택한다.
    - `ART_DIRECTION_BRIEF`: 사용자가 생성/제공할 수 있는 구체적 brief를 만든다. 이 경로는 Design Composer 진입을 허용하지 않는다.
    - `LOCAL_COMPOSITION_PROTOTYPE`: `work/design/visual-reference/` 안에 production source와 분리된 composition artifact를 만들고 limitation을 기록한다.
-4. `section-reference-manifest.json`에 section과 artifact의 대응을 기록한다.
-5. Visual Critic이 실제 artifact를 검토해 `visual-reference-review.json`을 작성한다. 승인 전에는 Design Composer가 prototype을 만들 수 없다.
+4. `design-plan.sectionPlan`의 고유 `sectionId`와 visual reference 필요 여부를 정하고, 모든 필수 section에 대응하는 artifact를 `section-reference-manifest.json`에 기록한다. 선택 section은 이유를 기록하며 artifact를 강제하지 않는다.
+5. Visual Critic이 manifest의 모든 reviewable artifact를 검토해 `visual-reference-review.json.reviewedArtifacts`에 기록한다. 승인 전에는 Design Composer가 prototype을 만들 수 없다.
 
 ## Fidelity 기준
 

@@ -14,7 +14,7 @@
 
 `dials`의 `designVariance`, `motionIntensity`, `visualDensity`는 각각 `{ "value": <number>, "reason": "..." }` 형태다. 수치를 무작위로 고르지 않는다.
 
-각 `sectionPlan` 항목은 기존 관계 필드에 더해 `sectionRole`, `mediaRole`, `compositionAnchor`, `scaleContrast`, `depthMode`, `backgroundMode`, `transitionIntent`를 가진다. 섹션을 독립 카드 묶음으로 만들지 말고 앞뒤 관계와 visual intensity 변화를 설명한다.
+각 `sectionPlan` 항목은 고유한 `sectionId`와 `{ "required": <boolean>, "reason": "..." }` 형태의 `visualReference`를 가진다. 기존 관계 필드에 더해 `sectionRole`, `mediaRole`, `compositionAnchor`, `scaleContrast`, `depthMode`, `backgroundMode`, `transitionIntent`를 가진다. `visualReference.required: false`에는 해당 section이 별도의 visual reference를 필요로 하지 않는 구체적 이유를 쓴다. 섹션을 독립 카드 묶음으로 만들지 말고 앞뒤 관계와 visual intensity 변화를 설명한다.
 
 `motionDirection`은 `motionCharacter`, `primaryMovement`, `secondaryMovement`, `continuousMovement`, `sectionEntryVariation`, `pointerUsage`, `scrollUsage`, `restraint`를 가진다. conceptual direction만 기록하고 production primitive는 기존 Publishing Interaction Authoring에 맡긴다.
 

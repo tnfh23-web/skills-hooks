@@ -34,6 +34,7 @@ function validPlan() {
     shapeLanguage: { corners: 'mostly square', reason: 'editorial tone' },
     assetStrategy: { source: 'project-local', treatment: 'documented crops' },
     sectionPlan: [{
+      sectionId: 'hero', visualReference: { required: true, reason: 'The lead image defines the opening composition.' },
       role: 'lead', contentPriority: 'primary', compositionLogic: 'asymmetric split', visualAnchor: 'lead image',
       layoutTension: 'headline against image edge', relationshipToPrevious: 'page entry',
       relationshipToNext: 'hands off to story index', interactionOpportunity: 'story navigation',
@@ -96,6 +97,7 @@ function validVisualDirection() {
     avoid: ['three equal story cards', 'decorative CSS rectangles as primary material'],
     referenceStrategy: {
       capability: 'AVAILABLE', status: 'READY', mode: 'GENERATED_SECTION_REFERENCES',
+      capabilityEvidence: { source: 'active-session-tool', tool: 'image-generation', verified: true },
       rationale: 'The active session exposes real image generation capability.'
     }
   };
@@ -127,7 +129,8 @@ function writeValidVisualReference(dir) {
     strategy: 'GENERATED_SECTION_REFERENCES',
     sections: [{
       sectionId: 'hero', role: 'opening scene', artifact: 'visual-reference/hero.png',
-      evidenceType: 'generated-section-reference', reviewable: true
+      evidenceType: 'generated-section-reference', reviewable: true,
+      provenance: { source: 'image-generation', verified: true }
     }]
   });
   writeJson(path.join(visualDir, 'visual-reference-review.json'), {
@@ -359,5 +362,100 @@ const briefFallbackEvidence = inspectVisualReferenceEvidence({ designDir: briefF
 assert.equal(briefFallbackEvidence.status, 'VISUAL_REFERENCE_TOOL_UNAVAILABLE', 'AG: unavailable art-direction brief preserves explicit tool-unavailable state');
 assert.equal(briefFallbackEvidence.composerReady, false, 'AG: art-direction brief alone cannot enter Design Composer');
 
+const missingSectionDir = reset('missing-required-section');
+const missingSectionPlan = validPlan();
+missingSectionPlan.sectionPlan.push({ ...missingSectionPlan.sectionPlan[0], sectionId: 'work',
+  visualReference: { required: true, reason: 'Project imagery defines the work scene.' } });
+writeJson(path.join(missingSectionDir, 'design-plan.json'), missingSectionPlan);
+assert.throws(() => assertComposerReady({ designDir: missingSectionDir }), /required visual reference is missing for sectionId: work/, 'AH: missing required section blocks Composer');
+assert.equal(evaluateDesignGate({ designDir: missingSectionDir }).status, 'FAIL', 'AH: missing required section blocks gate');
+assert.throws(() => createDesignHandoff({ route: 'DESIGN_AND_PUBLISH', designDir: missingSectionDir }), /required visual reference is missing/, 'AH: missing required section blocks handoff');
+
+const optionalDir = reset('optional-section');
+const optionalPlan = validPlan();
+optionalPlan.sectionPlan.push({ ...optionalPlan.sectionPlan[0], sectionId: 'legal',
+  visualReference: { required: false, reason: 'The legal footer uses a restrained utility layout.' } });
+writeJson(path.join(optionalDir, 'design-plan.json'), optionalPlan);
+assert.equal(assertComposerReady({ designDir: optionalDir }).composerReady, true, 'AI: optional section with a reason needs no artifact');
+optionalPlan.sectionPlan[1].visualReference.reason = '';
+writeJson(path.join(optionalDir, 'design-plan.json'), optionalPlan);
+assert.equal(validateDesignPlan(optionalPlan).valid, false, 'AI: optional section without a reason is invalid');
+assert.throws(() => assertComposerReady({ designDir: optionalDir }), /visualReference.reason is required/, 'AI: optional section without a reason blocks Composer');
+
+const incompleteReviewDir = reset('incomplete-review');
+writeValidPng(path.join(incompleteReviewDir, 'visual-reference', 'detail.png'), 8, 6);
+const incompleteManifest = JSON.parse(fs.readFileSync(path.join(incompleteReviewDir, 'visual-reference', 'section-reference-manifest.json'), 'utf8'));
+incompleteManifest.sections.push({ sectionId: 'hero', role: 'detail', artifact: 'visual-reference/detail.png',
+  evidenceType: 'generated-section-reference', reviewable: true, provenance: { source: 'image-generation', verified: true } });
+// A second artifact belongs to the same planned section, so coverage must not treat it as a new section.
+writeJson(path.join(incompleteReviewDir, 'visual-reference', 'section-reference-manifest.json'), incompleteManifest);
+assert.throws(() => assertComposerReady({ designDir: incompleteReviewDir }), /reviewable manifest artifact was not reviewed: visual-reference\/detail.png/, 'AJ: every reviewable artifact must be reviewed');
+assert.equal(evaluateDesignGate({ designDir: incompleteReviewDir }).status, 'FAIL', 'AJ: incomplete review blocks gate');
+assert.throws(() => createDesignHandoff({ route: 'DESIGN_AND_PUBLISH', designDir: incompleteReviewDir }), /reviewable manifest artifact was not reviewed/, 'AJ: incomplete review blocks handoff');
+
+const orphanReviewDir = reset('orphan-reviewed-artifact');
+const orphanReview = JSON.parse(fs.readFileSync(path.join(orphanReviewDir, 'visual-reference', 'visual-reference-review.json'), 'utf8'));
+orphanReview.reviewedArtifacts.push('visual-reference/unlisted.png');
+writeJson(path.join(orphanReviewDir, 'visual-reference', 'visual-reference-review.json'), orphanReview);
+assert.throws(() => assertComposerReady({ designDir: orphanReviewDir }), /reviewed artifact is not in manifest/, 'AK: reviewed artifact without manifest entry is invalid');
+
+const missingCapabilityDir = reset('missing-capability-provenance');
+const missingCapabilityDirection = validVisualDirection();
+delete missingCapabilityDirection.referenceStrategy.capabilityEvidence;
+writeJson(path.join(missingCapabilityDir, 'visual-reference', 'visual-direction.json'), missingCapabilityDirection);
+assert.throws(() => assertComposerReady({ designDir: missingCapabilityDir }), /capabilityEvidence/, 'AL: AVAILABLE alone is insufficient for generated references');
+
+const completeCoverageDir = reset('complete-coverage');
+const completePlan = validPlan();
+completePlan.sectionPlan.push({ ...completePlan.sectionPlan[0], sectionId: 'work',
+  visualReference: { required: true, reason: 'Project imagery establishes this composition.' } });
+completePlan.sectionPlan.push({ ...completePlan.sectionPlan[0], sectionId: 'legal',
+  visualReference: { required: false, reason: 'The utility footer needs no distinct visual reference.' } });
+writeJson(path.join(completeCoverageDir, 'design-plan.json'), completePlan);
+writeValidPng(path.join(completeCoverageDir, 'visual-reference', 'work.png'), 8, 6);
+const completeManifest = JSON.parse(fs.readFileSync(path.join(completeCoverageDir, 'visual-reference', 'section-reference-manifest.json'), 'utf8'));
+completeManifest.sections.push({ sectionId: 'work', role: 'project gallery', artifact: 'visual-reference/work.png',
+  evidenceType: 'generated-section-reference', reviewable: true, provenance: { source: 'image-generation', verified: true } });
+writeJson(path.join(completeCoverageDir, 'visual-reference', 'section-reference-manifest.json'), completeManifest);
+const completeReview = JSON.parse(fs.readFileSync(path.join(completeCoverageDir, 'visual-reference', 'visual-reference-review.json'), 'utf8'));
+completeReview.reviewedArtifacts.push('visual-reference/work.png');
+writeJson(path.join(completeCoverageDir, 'visual-reference', 'visual-reference-review.json'), completeReview);
+writeJson(path.join(completeCoverageDir, 'handoff.json'), createDesignHandoff({ route: 'DESIGN_AND_PUBLISH', designDir: completeCoverageDir }));
+assert.equal(assertComposerReady({ designDir: completeCoverageDir }).composerReady, true, 'AM: complete section, review, and provenance coverage is Composer ready');
+assert.equal(evaluateDesignGate({ designDir: completeCoverageDir, forPublishing: true }).status, 'DESIGN_READY', 'AM: complete coverage passes gate');
+
+const duplicatePlan = validPlan();
+duplicatePlan.sectionPlan.push({ ...duplicatePlan.sectionPlan[0] });
+assert.equal(validateDesignPlan(duplicatePlan).valid, false, 'AN: duplicate sectionId is invalid');
+
+const orphanManifestDir = reset('orphan-manifest-section');
+writeValidPng(path.join(orphanManifestDir, 'visual-reference', 'orphan.png'), 8, 6);
+const orphanManifest = JSON.parse(fs.readFileSync(path.join(orphanManifestDir, 'visual-reference', 'section-reference-manifest.json'), 'utf8'));
+orphanManifest.sections.push({ sectionId: 'unknown', role: 'orphan', artifact: 'visual-reference/orphan.png',
+  evidenceType: 'generated-section-reference', reviewable: true, provenance: { source: 'image-generation', verified: true } });
+writeJson(path.join(orphanManifestDir, 'visual-reference', 'section-reference-manifest.json'), orphanManifest);
+assert.throws(() => assertComposerReady({ designDir: orphanManifestDir }), /manifest orphan sectionId: unknown/, 'AO: manifest section must exist in plan');
+
+const missingArtifactProvenanceDir = reset('missing-artifact-provenance');
+const missingArtifactManifest = JSON.parse(fs.readFileSync(path.join(missingArtifactProvenanceDir, 'visual-reference', 'section-reference-manifest.json'), 'utf8'));
+delete missingArtifactManifest.sections[0].provenance;
+writeJson(path.join(missingArtifactProvenanceDir, 'visual-reference', 'section-reference-manifest.json'), missingArtifactManifest);
+assert.throws(() => assertComposerReady({ designDir: missingArtifactProvenanceDir }), /generated artifact 0 requires provenance/, 'AP: generated artifact without provenance is invalid');
+
+const normalizedPathDir = reset('normalized-artifact-path');
+const normalizedManifest = JSON.parse(fs.readFileSync(path.join(normalizedPathDir, 'visual-reference', 'section-reference-manifest.json'), 'utf8'));
+normalizedManifest.sections[0].artifact = '.\\visual-reference\\hero.png';
+writeJson(path.join(normalizedPathDir, 'visual-reference', 'section-reference-manifest.json'), normalizedManifest);
+const normalizedReview = JSON.parse(fs.readFileSync(path.join(normalizedPathDir, 'visual-reference', 'visual-reference-review.json'), 'utf8'));
+normalizedReview.reviewedArtifacts = ['./visual-reference\\hero.png'];
+writeJson(path.join(normalizedPathDir, 'visual-reference', 'visual-reference-review.json'), normalizedReview);
+assert.equal(assertComposerReady({ designDir: normalizedPathDir }).composerReady, true, 'AQ: equivalent path separators and dot prefixes compare equally');
+
+const escapingPathDir = reset('escaping-artifact-path');
+const escapingManifest = JSON.parse(fs.readFileSync(path.join(escapingPathDir, 'visual-reference', 'section-reference-manifest.json'), 'utf8'));
+escapingManifest.sections[0].artifact = 'visual-reference/../outside.png';
+writeJson(path.join(escapingPathDir, 'visual-reference', 'section-reference-manifest.json'), escapingManifest);
+assert.throws(() => assertComposerReady({ designDir: escapingPathDir }), /artifact must stay under visual-reference/, 'AR: normalized artifact path cannot escape visual-reference');
+
 fs.rmSync(testRoot, { recursive: true, force: true });
-console.log('design workflow routing, visual-first contract, gate integrity, ownership, freeze, PNG evidence, and publishing bridge A-AG: PASS');
+console.log('design workflow routing, visual reference coverage, gate integrity, ownership, freeze, PNG evidence, and publishing bridge A-AR: PASS');
