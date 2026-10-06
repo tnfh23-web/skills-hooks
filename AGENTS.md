@@ -1,7 +1,26 @@
-# Reference publishing project rules
+# 콘텐츠와 경험을 중심으로 만드는 웹 프로젝트
 
-- Treat the supplied reference as a web interface state; do not redesign it.
-- Prefer project-local assets, fonts, and libraries. Do not add CDN dependencies by default.
-- Do not claim completion without a real Chromium capture and visual verification.
-- Keep visual QA artifacts under `qa/`, separate from source files.
-- Preserve existing user files; make the smallest targeted change that improves the largest measured mismatch.
+## 작업을 구분한다
+
+- **새 사이트·명시적 리디자인**: `.agents/skills/frontend-experience/SKILL.md`를 읽는다. 콘텐츠에 맞는 콘셉트와 페이지 전반의 인터랙션을 구현 전에 설계한다. Build Web Apps가 설치되어 있으면 `frontend-app-builder`의 콘셉트 → 구현 → 실제 화면 비교 흐름을 사용한다. 커스텀 디자인 디렉터를 기본 경로로 사용하지 않는다.
+- **제공된 시안의 충실한 구현**: `.agents/skills/reference-publish/SKILL.md`를 읽는다. 레퍼런스를 구현할 웹 상태로 취급하고 임의로 재디자인하지 않는다.
+- **기존 화면의 작은 수정·버그**: 현재 디자인과 사용자 변경을 유지하고 해당 흐름만 수정·검증한다. 전체 콘셉트 제작을 다시 시작하지 않는다.
+- **프로세스 페이지**: `.agents/skills/frontend-experience/references/process-pages.md`를 읽는다. 기획·디자인·제작을 설명하는 페이지이며 입장 안내 단계와 구분한다.
+
+## 이 사용자의 디자인 기준
+
+우선순위는 **풍부한 인터랙션**, **AI 티가 나지 않는 디자인**이다. 본문·UI는 보통 Pretendard를 사용하고 제목은 브랜드와 콘텐츠에 맞춰 선택한다. 기존 브랜드와 최신 사용자 지시가 이 기본값보다 우선한다.
+
+- 버튼마다 장식적인 화살표를 붙이지 않는다. 실제 방향이나 동작에 필요할 때 사용한다.
+- 세리프, 반복 카드, 같은 섹션 구도, 같은 fade-up을 습관적으로 선택하지 않는다. 콘텐츠에 맞는 이유가 있어야 한다.
+- 히어로 하나만 움직이는 것으로 끝내지 않는다. 글자·사진·작품과 주요 조작이 스크롤·포인터·클릭·드래그에 일관되게 반응하도록 계획한다. 모든 요소에 효과를 넣거나 Three.js를 강제한다는 뜻은 아니다.
+- 부드러운 스크롤·드래그·회전과 실제 성능을 함께 확인한다. 멋진 연출이 렉 때문에 보이지 않으면 완료가 아니다.
+
+## 실행과 검증
+
+- 기존 로컬 자산·폰트·라이브러리를 우선한다. 필요한 도구를 선택하며 기술 이름을 채우려고 패키지를 추가하지 않는다.
+- 브라우저에서 데스크톱·태블릿·모바일과 실제 입력을 확인한다. 생성 시안과 구현 캡처를 구분하고 불일치를 수정한다. 빌드 성공이나 QA PASS만으로 디자인 품질을 단정하지 않는다.
+- 이 저장소의 퍼블리싱 QA 산출물은 `qa/`에 둔다. 외부 프로젝트는 그 프로젝트의 QA 경로와 `--source-root`를 사용한다. 디자인 기록과 QA는 제품 화면에 노출하지 않는다.
+- 현재 도구로 해결하기 어려워 새 플러그인이 필요할 때만 이름과 이유를 설명하고 설치·연결을 질문한다. 명시적으로 요청받은 설치는 재확인을 반복하지 않는다.
+- 새 프로젝트는 사용자가 지정한 C드라이브 경로에 만들고 실제 경로를 알려준다. 공개·배포·설정 변경의 권한은 별도로 확인하며 작업 요청을 무관한 프로젝트나 글로벌 설정 변경으로 확대하지 않는다.
+- 커스텀 에이전트 설정은 필요하고 위임이 허용된 작업에서만 사용한다. 이 문서는 자동 위임을 요구하지 않는다.

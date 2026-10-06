@@ -12,7 +12,7 @@ const config = fs.readFileSync('.codex/config.toml', 'utf8');
 assert.match(config, /model = "gpt-5\.6-sol"/);
 assert.match(config, /\[agents\]/);
 const agentExpectations = new Map([
-  ['planner-design-director.toml', ['gpt-5.6-sol', 'high']],
+  ['reference-planner.toml', ['gpt-5.6-sol', 'high']],
   ['verifier-visual-critic.toml', ['gpt-5.6-sol', 'high']],
   ['general-ui-coder.toml', ['gpt-5.6-luna', 'medium']],
   ['motion-coder.toml', ['gpt-5.6-terra', 'high']],

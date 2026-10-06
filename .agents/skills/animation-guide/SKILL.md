@@ -1,11 +1,13 @@
 ---
 name: animation-guide
-description: 정적 시안 충실도를 해치지 않으면서 계획된 상호작용과 모션을 로컬 우선 방식으로 구현하는 공통 규칙을 적용한다.
+description: 콘텐츠별 인터랙션 계획을 부드러운 입력·스크롤·모션으로 구현하고 반응형·움직임 감소·성능을 유지한다.
 ---
 
 # 애니메이션 구현 가이드
 
-정적 기준선이 안정되고 `work/interaction-plan.json` 검증이 끝난 뒤 사용한다.
+새 디자인은 구현 전 `frontend-experience`의 인터랙션 맵을 사용한다. 제공 시안의 퍼블리싱은 명시된 상호작용 근거와 QA 계약을 사용한다. 정적 QA가 끝난 뒤에야 모든 모션을 구상하는 흐름을 사용하지 않는다.
+
+페이지 전반의 반응, 반복 등장, 부드러운 스크롤·드래그, 모바일 입력, 렌더 중단과 정리는 [모션·입력·성능](../frontend-experience/references/motion-and-input.md)을 읽는다. 효과 수나 라이브러리를 늘리는 대신 콘텐츠에 맞게 설계한 반응을 실제로 구현한다.
 
 ## 공통 원칙
 
@@ -22,7 +24,7 @@ description: 정적 시안 충실도를 해치지 않으면서 계획된 상호�
 - primitive: duration/easing, progress sampling, visible-state 검사, underline/active bar, text shift/mask, button fill/border/background, 기본 image crop/scale, transform ownership wrapper
 - shared recipe: dropdown/drawer/menu state, hover caption/dim/image swap, pointer tooltip/reactive/speed control, scroll reveal(fade/translate/stagger/clip/mask/media/counter/SVG/text highlight/saturation), parallax, ticker/loop/floating, scroll story
 - dedicated skill: `carousel-state`, `marquee`, `pin-scrub-track`, `scene-transition`, `split-text-reveal`, `horizontal-pin-scroll`
-- deferred: canvas/WebGL 및 결정적 계약이 없는 효과
+- 자동 QA 밖: canvas/WebGL 및 결정적 계약이 없는 효과. 브라우저 직접 조작과 성능 검증을 추가하며 구현 자체를 금지하지 않는다.
 
 ## 단위
 
