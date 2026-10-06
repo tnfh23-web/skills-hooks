@@ -21,23 +21,28 @@ function parseArgs(argv) {
 
 const fileUrl = (value) => /^[a-z]+:\/\//i.test(value) ? value : new URL(`file://${path.resolve(value).replaceAll('\\', '/')}`).href;
 
-const DEFAULT_DESIGN_MOTION_LANGUAGE = Object.freeze({
-  character: 'restrained',
-  pace: 'moderate',
-  preferredFamilies: Object.freeze([]),
-  bannedFamilies: Object.freeze(['generic-card-lift', 'all-sections-fade-up']),
-  preferredPrimitives: Object.freeze([]),
-  bannedPrimitives: Object.freeze(['generic-card-lift', 'global-scale-1.05', 'decorative-arrow-default', 'all-elements-opacity-only']),
-  sectionEntryVariation: 'section intent에 따라 2~4개 family 안에서 변주',
-  pointerUsage: 'semantic affordance가 있는 요소에만 제한',
-  continuousMotionUsage: '희소하게 사용하고 정보 전달을 방해하지 않음',
-  scrollStory: '내용의 순차 이해에 필요한 경우만 사용'
-});
+function motionLanguageErrors(language) {
+  const errors = [];
+  if (!language || typeof language !== 'object' || Array.isArray(language)) return ['DESIGN_MODE requires an authored motionLanguage object; automatic design defaults are not used'];
+  for (const field of ['character', 'pace', 'sectionEntryVariation', 'pointerUsage', 'continuousMotionUsage', 'scrollStory']) {
+    if (typeof language[field] !== 'string' || !language[field].trim()) errors.push(`motionLanguage.${field} must be a non-empty string`);
+  }
+  for (const field of ['preferredFamilies', 'bannedFamilies', 'preferredPrimitives', 'bannedPrimitives']) {
+    if (language[field] === undefined && ['preferredPrimitives', 'bannedPrimitives'].includes(field)) continue;
+    if (!Array.isArray(language[field]) || language[field].some((value) => typeof value !== 'string' || !value.trim())) errors.push(`motionLanguage.${field} must be an array of non-empty strings`);
+  }
+  return errors;
+}
 
 function resolveEffectiveMotionLanguage(designMode, motionLanguage) {
-  if (designMode !== 'design') return null;
-  if (motionLanguage) return motionLanguage;
-  return { ...DEFAULT_DESIGN_MOTION_LANGUAGE, preferredFamilies: [...DEFAULT_DESIGN_MOTION_LANGUAGE.preferredFamilies], bannedFamilies: [...DEFAULT_DESIGN_MOTION_LANGUAGE.bannedFamilies], preferredPrimitives: [...DEFAULT_DESIGN_MOTION_LANGUAGE.preferredPrimitives], bannedPrimitives: [...DEFAULT_DESIGN_MOTION_LANGUAGE.bannedPrimitives] };
+  if (!['reference', 'design'].includes(designMode)) throw new Error('designMode must be reference or design');
+  if (designMode === 'reference') {
+    if (motionLanguage !== null) throw new Error('motionLanguage is only accepted in --mode design; reference evidence remains authoritative');
+    return null;
+  }
+  const errors = motionLanguageErrors(motionLanguage);
+  if (errors.length) throw new Error(errors.join('; '));
+  return motionLanguage;
 }
 
 export function validateInteractionPlan(plan) {
@@ -48,9 +53,7 @@ export function validateInteractionPlan(plan) {
   if (!Array.isArray(plan.candidates)) errors.push('candidates must be an array');
   if (plan.coverage !== undefined && (!plan.coverage || !Array.isArray(plan.coverage.actionable))) errors.push('coverage.actionable must be an array when coverage is present');
   if (plan.interactionLanguage !== undefined || plan.actionableAuthoring !== undefined || plan.interactionComposition !== undefined || (plan.candidates || []).some((candidate) => candidate?.authoring)) errors.push(...validateAuthoring(plan).errors);
-  if (plan.designMode === 'design' && (!plan.motionLanguage || !plan.motionLanguage.character || !plan.motionLanguage.pace || !Array.isArray(plan.motionLanguage.preferredFamilies) || !Array.isArray(plan.motionLanguage.bannedFamilies) || !plan.motionLanguage.sectionEntryVariation || !plan.motionLanguage.pointerUsage || !plan.motionLanguage.continuousMotionUsage || !plan.motionLanguage.scrollStory)) {
-    errors.push('DESIGN_MODE requires a complete motionLanguage contract');
-  }
+  if (plan.designMode === 'design') errors.push(...motionLanguageErrors(plan.motionLanguage));
   if (plan.motionLanguage?.preferredPrimitives !== undefined && !Array.isArray(plan.motionLanguage.preferredPrimitives)) errors.push('motionLanguage.preferredPrimitives must be an array when present');
   if (plan.motionLanguage?.bannedPrimitives !== undefined && !Array.isArray(plan.motionLanguage.bannedPrimitives)) errors.push('motionLanguage.bannedPrimitives must be an array when present');
   const ids = new Set();
@@ -242,12 +245,17 @@ async function main() {
     const result = validateInteractionPlan(plan); process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); process.exitCode = result.valid ? 0 : 1; return;
   }
   if (!args.url) throw new Error('Missing required argument --url');
+  if (args['motion-language'] === true) throw new Error('--motion-language requires a JSON file path');
+  const mode = args.mode || 'reference';
+  const motionLanguage = args['motion-language'] ? JSON.parse(fs.readFileSync(path.resolve(args['motion-language']), 'utf8')) : null;
+  // Fail before launching Chromium rather than silently inventing a design language.
+  resolveEffectiveMotionLanguage(mode, motionLanguage);
   const output = path.resolve(args.output || 'work/interaction-plan.json');
   const browser = await chromium.launch({ headless: true });
   try {
     const context = await browser.newContext({ viewport: { width: Number(args.width || 1440), height: Number(args.height || 900) } });
     const page = await context.newPage(); await page.goto(fileUrl(args.url), { waitUntil: 'load' });
-    const plan = await discoverInteractionPlan(page, { designMode: args.mode || 'reference', sourceRoot: args['source-root'] || process.cwd() });
+    const plan = await discoverInteractionPlan(page, { designMode: mode, sourceRoot: args['source-root'] || process.cwd(), motionLanguage });
     fs.mkdirSync(path.dirname(output), { recursive: true }); fs.writeFileSync(output, `${JSON.stringify(plan, null, 2)}\n`);
     process.stdout.write(`${JSON.stringify({ output, candidateCount: plan.candidates.length, mode: plan.designMode }, null, 2)}\n`);
     await context.close();

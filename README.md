@@ -1,141 +1,98 @@
-# 레퍼런스 퍼블리싱 자동화 V1
+# 콘텐츠 중심 디자인 + 레퍼런스 퍼블리싱
 
-정적 시안을 픽셀 좌표계로 측정하고 Chromium 결과와 비교하는 로컬 우선 퍼블리싱 워크플로다. 시안은 재설계 대상이 아니라 구현해야 할 웹 인터페이스 상태로 취급한다.
+이 저장소는 새 웹사이트의 **디자인·인터랙션 지침**과 기존 **퍼블리싱 QA 도구·Hook**을 함께 관리한다.
 
-## 작동 원리와 역할 구조
+디자인의 두 기준은 **풍부한 인터랙션**과 **AI 티가 나지 않는 것**이다. 기존의 “정적 화면을 먼저 만든 뒤 DOM에서 효과를 골라 붙이는 디자인 흐름”과 커스텀 Design Director 역할을 교체했다. 시안 측정·픽셀 비교·상태 검증·반응형 검사·소스 최신성을 확인하는 퍼블리싱 도구는 유지한다.
 
-```mermaid
-flowchart TD
-    INPUT["Reference 이미지 + local assets/fonts<br/>+ target project"] --> MAIN["Main Orchestrator<br/>전체 단계 조율"]
+## 어떤 흐름을 사용할까
 
-    MAIN --> EXPLORE["Explorer<br/>소스·asset·기존 구조 조사"]
-    MAIN --> PLAN["Planner / Design Director<br/>측정·구조·interaction 계획"]
-    EXPLORE --> SPEC["reference-spec.json<br/>pixel bounds · viewport · capture mode"]
-    PLAN --> SPEC
+| 요청 | 진입점 | 결과 |
+|---|---|---|
+| 새 사이트·리디자인 | [frontend-experience](.agents/skills/frontend-experience/SKILL.md) | 콘텐츠 기반 콘셉트와 인터랙션 맵 → 구현 → 실제 화면 비교 |
+| 제공된 시안 구현 | [reference-publish](.agents/skills/reference-publish/SKILL.md) | 시안 측정 → 구현 → 퍼블리싱 QA 반복 |
+| 실제 상태·모션 검증 | [interaction-ready](.agents/skills/interaction-ready/SKILL.md) / [interaction-plan](.agents/skills/interaction-plan/SKILL.md) | DOM 계약 → 상태/모션 QA → 완료 gate |
+| 모션 구현 | [animation-guide](.agents/skills/animation-guide/SKILL.md) + 필요한 패턴 스킬 | 입력·반응형·움직임 감소·성능을 보존한 구현 |
+| 제작 과정 페이지 | [프로세스 페이지 지침](.agents/skills/frontend-experience/references/process-pages.md) | 기획·디자인·제작 과정과 최신 실제 화면 |
 
-    SPEC --> STATIC["General UI Coder<br/>HTML · CSS · JS 정적 구현"]
-    STATIC --> STATIC_QA["Deterministic Static QA<br/>Visual · Geometry · Responsive"]
-    STATIC_QA --> STATIC_GATE{"정적 기준선 PASS?"}
-    STATIC_GATE -- "아니오" --> CRITIC["Verifier / Visual Critic<br/>가장 큰 mismatch와 false PASS 진단"]
-    CRITIC --> STATIC
+기존 화면의 작은 수정에는 전체 콘셉트 제작을 다시 시작하지 않는다. 사용자가 선택한 스택·기존 브랜드·최신 지시가 이 저장소의 기본값보다 우선한다.
 
-    STATIC_GATE -- "예" --> IPLAN["interaction-plan.json<br/>language · authoring · composition"]
-    IPLAN --> ROUTER{"semantic pattern routing"}
-    ROUTER --> STATE["General UI Coder<br/>tab · menu · carousel · state UI"]
-    ROUTER --> MOTION["Motion Coder + Dedicated Skills<br/>marquee · scroll · scene motion"]
-    STATE --> BEHAVIOR_QA["Interaction QA<br/>click 전후 semantic state 검증"]
-    MOTION --> MOTION_QA["Motion QA<br/>state sample · reduced motion 검증"]
+## 새 디자인의 기본 흐름
 
-    BEHAVIOR_QA --> FINAL_REVIEW["Verifier / Visual Critic<br/>visual · icon · interaction 증거 검토"]
-    MOTION_QA --> FINAL_REVIEW
-    FINAL_REVIEW --> STOP{"Stop Hook<br/>required report PASS?<br/>source fingerprint 최신?"}
-    STOP -- "아니오" --> BLOCK["BLOCK<br/>완료 선언 차단"]
-    BLOCK --> DEBUG["Debugger<br/>재현·원인 진단"]
-    DEBUG --> MAIN
-    STOP -- "예" --> RELEASE["ALLOW<br/>검수·release 가능"]
+1. 목적·대상·콘텐츠·핵심 행동·브랜드 자산을 확인한다.
+2. **구현 전에** 주요 섹션/상태의 콘셉트, 타이포그래피·레이아웃 체계와 콘텐츠별 인터랙션 맵을 만든다.
+3. 설치되어 있으면 Build Web Apps의 `frontend-app-builder` 흐름을 사용한다. 커스텀 디자인 디렉터를 자동으로 추가하지 않는다.
+4. 콘셉트에 맞춰 구현한다. 히어로뿐 아니라 페이지 전반의 글자·사진·작품·조작에 반응이 이어지게 한다.
+5. 실제 브라우저에서 데스크톱·태블릿·모바일, 입력, 움직임 감소, 최초 진입/반복 이동을 확인한다.
+6. 시안과 최신 렌더링을 직접 비교하고 불일치·조작 오류·성능 문제를 수정한다. 자동 QA PASS와 디자인 완성 판단은 구분한다.
 
-    classDef input fill:#eeecff,stroke:#8568ff,color:#17131f;
-    classDef agent fill:#dff2ff,stroke:#438ac7,color:#111827;
-    classDef artifact fill:#fff4cc,stroke:#c69a13,color:#211b08;
-    classDef qa fill:#d9f7ea,stroke:#16a36f,color:#09271c;
-    classDef gate fill:#eeeaff,stroke:#8066e8,color:#17131f;
-    classDef fail fill:#ffdede,stroke:#d93636,color:#4a0909;
-    classDef pass fill:#c9f3dc,stroke:#119b5f,color:#082b1b;
+인터랙션 맵은 `콘텐츠 / 입력 / 반응 / 모바일·키보드 대안 / 움직임 감소 / 검증 방법`을 정리한다. 구현 뒤 만드는 `interaction-plan.json`은 자동 QA 계약이며 이 사전 설계를 대신하지 않는다.
 
-    class INPUT input;
-    class MAIN,EXPLORE,PLAN,STATIC,STATE,MOTION,CRITIC,DEBUG agent;
-    class SPEC,IPLAN artifact;
-    class STATIC_QA,BEHAVIOR_QA,MOTION_QA,FINAL_REVIEW qa;
-    class STATIC_GATE,ROUTER,STOP gate;
-    class BLOCK fail;
-    class RELEASE pass;
-```
+## 반영한 디자인 기준
 
-Main은 순서와 범위를 조율하고, 에이전트 역할은 계획·구현·비평·진단을 나눠 맡는다. 실제 PASS/FAIL은 LLM의 주관적 선언이 아니라 Node/Playwright 기반 QA report와 현재 source fingerprint를 Stop Hook이 확인해 결정한다. FAIL 또는 stale evidence가 있으면 완료가 차단되고 해당 구현 단계로 돌아간다.
+- 본문·UI는 보통 **Pretendard**, 제목은 **브랜드와 콘텐츠**에 맞춰 선택한다. 분위기용 세리프를 기본값으로 넣지 않는다.
+- 모든 버튼에 장식 화살표를 반복하지 않는다. 실제 방향·동작을 전달할 때 사용한다.
+- 반복 카드·같은 섹션 구도·같은 fade-up으로 전체 페이지를 처리하지 않는다. 콘텐츠별 비중과 흐름을 설계한다.
+- 스크롤·포인터·클릭·드래그 반응을 연결하고 가독성이 필요한 구간에는 여유를 둔다. 단순 효과 개수로 풍부함을 판단하지 않는다.
+- 부드러운 스크롤·드래그·회전을 검토하고 렉 때문에 연출이 보이지 않는 상태를 해결한다.
+- Three.js·GSAP/ScrollTrigger·Lenis/ScrollSmoother·AOS·Swiper는 목적에 맞는 선택지다. 모든 프로젝트에 전부 설치하거나 3D 캐릭터를 강제하지 않는다.
+- 프로세스는 입장 안내가 아닌 **기획·디자인·제작 과정**이다. 순차 등장·재진입 반응·챕터 탐색과 현재 구현의 실제 캡처를 제공한다.
 
-## 기본 흐름
+구현 세부 기준은 [모션·입력·성능](.agents/skills/frontend-experience/references/motion-and-input.md)에 있다.
 
-1. `npm run qa:measure -- --reference <reference.png> --output work/reference-measurement.json`으로 원본을 측정한다.
-2. `npm run qa:spec -- --reference <reference.png> --capture-mode viewport|fullPage --viewport-width 1440 --viewport-height 900 --output work/reference-spec.json`으로 좌표·뷰포트·캡처 계약을 만든다.
-3. 정적 화면을 먼저 맞춘다. 긴 시안은 문서 높이이며 뷰포트 높이가 아니다.
-4. 정적 기준선이 안정되면 상호작용 후보를 발견하고 단일 SSOT인 `work/interaction-plan.json`을 검토한다.
-5. Visual, Interaction, Motion, Geometry, Responsive QA를 필요한 범위에서 실행한다.
-6. `--set-latest`로 선택한 QA 실행을 Stop Hook의 완료 기준으로 지정한다.
+## 이 지침을 다른 프로젝트에서 쓰기
+
+이 저장소 안에서는 루트 `AGENTS.md`와 `.agents/skills/`를 사용한다. 다른 프로젝트에서 사용하려면 필요한 스킬 폴더를 그 프로젝트의 `.agents/skills/`에 복사하고 관련 진입점을 연결한다. 설치된 개인 스킬로 사용하려면 선택한 스킬 폴더를 Codex 스킬 설치 방식으로 설치한다.
+
+`frontend-experience`는 자신의 두 reference 파일을 포함하므로 **폴더 전체**를 전달한다. 순수 디자인 지침으로 단독 사용할 수 있다. 퍼블리싱 자동 명령을 사용하려면 이 저장소의 `tools/`, 의존성과 관련 패턴 스킬도 접근 가능해야 한다. 명령은 이 도구 저장소에서 실행하며 `--source-root`로 대상 프로젝트를 지정한다.
+
+다른 프로젝트의 기존 `AGENTS.md`를 통째로 덮어쓰지 않는다. `.codex/config.toml`과 Hook을 복사하거나 글로벌 설정을 바꾸는 것은 별도 선택이다. 저장소를 수정하거나 링크를 열었다고 모델이 영구 학습하거나 모든 대화에 자동 적용되는 것은 아니다.
+
+## 유지한 퍼블리싱 자동화
+
+시안은 구현할 웹 인터페이스 상태로 취급한다. 로컬 자산·폰트·라이브러리를 우선하며 CDN을 자동 추가하지 않는다. 긴 시안은 문서 높이이고 뷰포트 높이가 아니다.
 
 ```powershell
-npm run qa:interaction-plan -- --url http://127.0.0.1:3000/ --mode reference --output work/interaction-plan.json
+npm ci
+npm run qa:measure -- --reference reference.png --output work/reference-measurement.json
+npm run qa:spec -- --reference reference.png --capture-mode fullPage --viewport-width 1440 --viewport-height 900 --output work/reference-spec.json
+npm run qa:interaction-plan -- --url http://127.0.0.1:3000/ --mode reference --source-root C:/target-project --output work/interaction-plan.json
 npm run qa:interaction-plan:validate -- --validate work/interaction-plan.json
-npm run qa -- --reference reference.png --url http://127.0.0.1:3000/ --capture-mode fullPage --width 1440 --height 900 --output qa --interaction-plan work/interaction-plan.json --require-motion --require-geometry --require-responsive --set-latest
-npm run qa:interaction -- --url http://127.0.0.1:3000/ --plan work/interaction-plan.json --output qa/interaction-report.json
-npm run qa:motion -- --url http://127.0.0.1:3000/ --plan work/interaction-plan.json --output qa/motion-report.json
-npm run qa:geometry -- --spec work/reference-spec.json --url http://127.0.0.1:3000/ --output qa/geometry-report.json
-npm run qa:responsive -- --url http://127.0.0.1:3000/ --output qa/responsive-report.json
+npm run qa -- --reference reference.png --url http://127.0.0.1:3000/ --capture-mode fullPage --width 1440 --height 900 --output C:/target-project/qa --source-root C:/target-project --interaction-plan work/interaction-plan.json --require-motion --require-geometry --require-responsive --set-latest
 ```
 
-## 상호작용 분류와 라우팅
+`reference-spec.json`은 좌표·viewport·captureMode 계약이다. `interaction-plan.json`은 selector·semantic state·evidence·recipe·모바일/움직임 감소·verification 계약이다. 생성된 후보는 실제 콘텐츠와 조작을 보고 검토한다.
 
-`tools/interaction-patterns.mjs`가 패턴 분류, 레시피, 전담 검증기, 자동화 상태의 단일 레지스트리다. Interaction Plan, Interaction QA, Motion QA가 모두 이 레지스트리를 사용한다.
+새 디자인의 모션 방향을 QA에 전달할 때는 **직접 작성한** `motion-language.json`을 사용한다. 고정된 기본 디자인을 생성하던 폴백은 제거했다.
 
-- `STATE_INTERACTION`: 탭, 아코디언, 드로어, 메뉴, 캐러셀처럼 클릭 후 의미 상태가 바뀌는 패턴
-- `POINTER_INTERACTION`: hover reveal, pointer reactive, cursor tooltip처럼 포인터 입력에 반응하는 패턴
-- `CONTINUOUS_MOTION`: marquee, ticker, loop처럼 시간에 따라 계속 움직이는 패턴
-- `SCROLL_MOTION`: reveal, pin/scrub, scene transition, split text, horizontal pin처럼 스크롤 진행률에 결합된 패턴
-- `ADVANCED`: canvas/WebGL처럼 현재 자동 검증 범위를 벗어난 패턴
+```powershell
+npm run qa:interaction-plan -- --url http://127.0.0.1:3000/ --mode design --motion-language work/motion-language.json --source-root C:/target-project --output work/interaction-plan.json
+```
 
-상태 상호작용은 Interaction QA가 실제 상태 전이를 검사한다. dropdown/menu-state는 명시된 control·panel·dismiss 계약을 사용하며 class 변화만으로 PASS하지 않는다. 모션 후보는 클릭 폴백을 사용하지 않고 Motion QA로 이관한다. `pin-scrub-track`, `scene-transition`, `split-text-reveal`, `horizontal-pin-scroll`은 각 recipe의 `verification.expectedStates`와 전용 semantic verifier를 사용하고, transform 변화만으로 PASS하지 않는다. 검증 계약이 부족한 모션은 `DEFERRED`, 현재 범위 밖 패턴은 `UNSUPPORTED`로 기록하며 자동 PASS로 바꾸지 않는다. 상세 매핑은 `docs/interaction-corpus.md`에 있다.
+입력 필드와 선택기 규칙은 [interaction-plan](.agents/skills/interaction-plan/SKILL.md) 및 [corpus 문서](docs/interaction-corpus.md)를 확인한다. `reference` 명령과 기존 QA report 계약은 유지한다. 기존 API/CLI에서 `design` 모드를 사용했다면 이제 작성한 motion language를 전달해야 한다.
 
-## 두 가지 설계 모드
+### QA와 완료 gate
 
-- `reference`: 시안 상태, 소스 주석, 명확한 DOM affordance가 근거다. HIGH는 구현·검증하고, MEDIUM은 보수적으로 구현하며, LOW 추정은 `skip`한다.
-- `design`: 페이지 전체 motion language를 먼저 정의한다. 성격, 속도, 선호/금지 family, section entry 변주, pointer/continuous/scroll 사용 원칙이 모두 필요하다.
+| 검사 | 확인하는 것 |
+|---|---|
+| Visual | 동일 dimension의 actual/diff/overlay/mask와 주요 mismatch |
+| Geometry | 레퍼런스 좌표와 실제 `getBoundingClientRect()` 차이 |
+| Responsive | overflow·잘림·중복 instance·숨겨진 branch·hover-only 정보 |
+| Interaction | 클릭 전후 semantic state, carousel projection, actionable feedback |
+| Motion | 움직임의 실제 상태 sample·pin 해제·장면 전환·움직임 감소 |
+| Stop Hook | 필요한 report PASS·canonical source root·source fingerprint 최신성 |
 
-시각적 장식만 보고 기능을 발명하지 않는다. 새 페이지는 필요 시 `html { font-size: 62.5%; }`로 `1rem = 10px` 규칙을 사용할 수 있지만, 레퍼런스 및 브라우저 측정 좌표는 px를 유지한다.
+`tools/interaction-patterns.mjs`는 자동 검증 패턴 레지스트리다. carousel·marquee·pin/scrub·scene transition·split text·horizontal pin 스킬을 필요한 경우 선택한다. 세부 대응은 [interaction-corpus.md](docs/interaction-corpus.md)에 있다.
 
-## 두 개의 핵심 계약
+계약 부족은 `DEFERRED`, 자동 범위 밖은 `UNSUPPORTED`로 기록한다. 특히 canvas/WebGL은 직접 브라우저에서 검증하며 미지원을 자동 PASS로 바꾸지 않는다. Visual/Interaction/Motion PASS는 디자인의 독창성·페이지 전반의 경험·기기별 성능을 자동 보증하지 않는다.
 
-- `work/reference-spec.json`: reference pixel dimensions, viewport, `captureMode`, section/major element bounds, typography 기대값을 가진다. source/Figma/PSD bounds를 우선하고 PNG만 있으면 deterministic measurement를 사용한다.
-- `work/interaction-plan.json`: interaction candidate의 id, selector, semanticType, evidence, provenance, confidence, implementation, recipe, requiredStates, responsive/reduced-motion 동작과 verification을 가진 유일한 SSOT다.
-- Interaction authoring: discovery 뒤 `interactionLanguage`, `actionableAuthoring`, candidate별 `authoring`, `interactionComposition`을 생성한다. 순서는 semantic type → intent → interaction family → primitive이며, `required-baseline`, `affordance-driven`, `enhanced-motion` 정책을 분리한다. `coverage.actionable`의 모든 selector는 actionable authoring group에 연결되어야 한다. Behavior authoring(클릭 후 상태 변화)과 feedback authoring(hover/focus/active primitive)을 분리한다. Corpus는 효과 복제 목록이 아니라 재사용 가능한 interaction vocabulary다.
-- Primitive selection은 recipe의 고정 효과를 복사하지 않고 visual language의 line/shape/image/density/contrast 관찰값과 primitive 후보군을 조합해 결정하며 rationale을 남긴다. Anti-generic validator는 3개 이상 semantic group의 단일 primitive 반복, 80% 이상 opacity-only, generic translateY/card-lift 반복, image/card 전체 generic scale, 근거 없는 decorative arrow를 FAIL 처리한다. 작은 1~2 group 페이지의 동일 primitive는 허용한다.
-- `interactionComposition`은 `primary`, `secondary`, `continuous`, `restraint` 네 역할을 가진다. stateful affordance가 있는데 primary가 비어 있거나 continuous motion만 남으면 plan을 거부한다. REFERENCE_MODE enhanced-motion은 evidence가 없으면 `implementation: "skip"`만 허용하고, DESIGN_MODE는 motionLanguage의 preferred/banned family와 pointer/continuous/scroll/pace/character 제약을 실제 selection에 사용한다.
+Stop Hook은 기존 퍼블리싱 gate이며 이번 변경에서 새 사이트의 창작 품질 gate로 확대하지 않았다. 필요한 report와 실제 화면 비교를 함께 확인한다. source 변경 뒤 관련 QA를 다시 실행하고 `--set-latest`로 선택한 대상의 QA run을 가리킨다. 의도적 clipping은 `data-qa-allow-clipping`과 report에 남긴다.
 
-## Skill 계층
+## 프로젝트 에이전트와 테스트
 
-- primitive: 탭/아코디언 상태, 기본 hover/focus, progress sampling처럼 작은 공통 단위
-- shared recipe: drawer, dropdown, hover reveal, scroll reveal, parallax처럼 공통 계약으로 충분한 패턴
-- Dedicated Skill: 상태 동기화나 DOM·responsive·접근성 함정이 큰 `carousel-state`, `marquee`, `pin-scrub-track`, `scene-transition`, `split-text-reveal`, `horizontal-pin-scroll`
-- deferred/unsupported: 자동 검증 계약이 없거나 canvas/WebGL처럼 현재 범위 밖인 패턴
-
-## QA와 최신성
-
-- Visual QA: dimension, 실제 mismatch mask, mismatch ratio와 큰 region을 함께 판정하고 `actual.png`, `diff.png`, `overlay.png`, `mask.png`, `report.json`을 만든다.
-- Interaction QA: state candidate를 실제 클릭/hover하고 before/after semantic state와 carousel projection 동기화를 검사한다. interaction plan이 선택되면 visible actionable element inventory도 함께 검사해 hover feedback, keyboard focus-visible feedback, perceptible feedback, native 또는 검증된 click behavior가 빠진 control을 selector와 failure reason으로 기록한다.
-- Motion QA: marquee 구조와 reduced motion을 검사하고, shared scroll recipe는 0/0.25/0.5/0.75/1 sample을 사용한다. Dedicated recipe는 pin 도달/해제, active scene 전환, 접근 가능한 원문·font·responsive text, track distance/mobile fallback을 각각 확인하며 required state coverage와 runtime error를 report에 남긴다.
-- Geometry QA: 레퍼런스 좌표와 `getBoundingClientRect()`를 비교해 `dx/dy/dw/dh`를 기록한다.
-- Responsive QA: 1024×768 및 390×844에서 overflow, 잘림, 중복 instance, 숨겨진 branch animation, hover-only 핵심 정보 등을 점검한다.
-
-Visual, Interaction, Motion, Geometry, Responsive 보고서는 소스 지문을 가진다. 외부 target을 검수할 때는 모든 명령에 `--source-root <target-project>`를 명시하고, `--set-latest`는 그 target의 canonical QA output을 가리키게 한다. Stop Hook은 canonical source root가 일치하는지, 필요한 보고서가 PASS인지, actionable coverage가 통과했는지, 현재 소스와 지문이 일치하는지를 검사한다. 의도적인 marquee/scene clipping은 target DOM에 `data-qa-allow-clipping`을 명시해야 하며 Responsive report의 `allowedClipping`에 기록된다. `qa/`, `qa-*`, `qa_*`, `qa.*` 같은 최상위 QA 산출물 루트만 지문에서 제외하며 `qaSomething/` 같은 실제 소스 폴더는 제외하지 않는다.
-
-### Actionable coverage와 perceptibility
-
-interaction plan의 `coverage.actionable`은 명확하게 검출되는 `a`, `button`, `role=tab`, `summary`, `aria-expanded`, next/prev control만 대상으로 한다. hover는 pointer 이동 전후의 computed style, focus는 keyboard 경로와 `:focus-visible`, click은 native navigation/submit·명시적 handler·interaction candidate 중 하나의 근거를 요구한다. 실제 상태 변화는 Interaction QA가 별도로 click 전후 semantic state와 panel/projection을 확인하므로 범용 자동화 엔진으로 추측하지 않는다.
-
-## Local-first와 단위
-
-기존 project library → 기존 helper → 이미 설치된 package → 필요한 local npm install 순서로 사용한다. GSAP, Swiper, Google Fonts 같은 CDN을 자동 추가하지 않는다. 신규 페이지는 `html { font-size: 62.5%; }`를 사용할 수 있고 spacing/typography/radius/motion distance는 rem을 우선한다. screenshot/reference/runtime measurement와 1px hairline은 px를 유지한다.
-
-## 프로젝트 에이전트
-
-`.codex/config.toml`과 `.codex/agents/*.toml`은 Codex가 공식 지원하는 프로젝트 custom agent 설정을 사용한다. 역할은 기획/디자인 디렉터, 검증/비주얼 크리틱, 일반 UI 코더, 모션 코더, 디버거, 탐색기로 분리한다. QA 도구 자체는 결정적 Node/Playwright 프로그램이며 LLM을 사용하지 않는다. 모델 배정과 쓰기 권한은 `docs/agent-roles.md`에 정리되어 있다.
-
-## Stop Hook
-
-소스를 바꾼 뒤 완료 선언 전에 관련 QA를 다시 실행한다. Hook이 활성화되지 않았다면 Codex 앱에서 프로젝트를 다시 열고 프로젝트 Hook을 신뢰/활성화한 다음 `npm test` 또는 `node .codex/hooks/stop-reference-publish.mjs`로 smoke test를 한다. Hook은 객관적 증거만 판정하며 어떤 효과를 선택할지는 결정하지 않는다.
-
-## 테스트
+커스텀 Design Director 대신 제공 시안의 측정·QA 계약만 맡는 Reference Planner를 둔다. 나머지 퍼블리싱 역할과 모델 설정은 유지하며 필요하고 위임이 허용된 작업에서만 사용한다. [agent-roles.md](docs/agent-roles.md)에 범위를 정리했다.
 
 ```powershell
 npm test
 ```
 
-syntax/config, Visual QA, reference/geometry/responsive workflow, interaction/motion contract, Stop Hook을 순서대로 실행한다. 테스트를 느슨하게 바꿔 PASS를 만들지 않고 실제 state·motion sample·freshness를 검증한다.
+syntax/config, Visual QA, reference/geometry/responsive, interaction/motion, authoring, CLI motion-language 입력, Stop Hook의 실제 상태·소스 최신성을 검사한다. 스킬 형식 검증과 동작 테스트가 통과해도 새 디자인 결과의 품질은 실제 제작과 렌더링으로 검증해야 한다.

@@ -4,5 +4,6 @@ model = "gpt-5.6-luna"
 model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 developer_instructions = """
+새 디자인은 frontend-experience에서 먼저 작성한 콘셉트·디자인 시스템·인터랙션 맵을 따른다. 본문 Pretendard 선호와 콘텐츠별 제목 서체, 의미가 있을 때만 쓰는 화살표, 같은 액션의 일관된 배치, 데스크톱/태블릿/모바일을 반영한다. 사용자가 선택한 프레임워크와 기존 구조가 우선이며 아래 정적 퍼블리싱 convention을 React 등의 앱에 강제하지 않는다.
 승인된 plan과 레퍼런스 측정을 따라 HTML/CSS/JS를 구현한다. 새 퍼블리싱 프로젝트를 생성할 때 `.agents/skills/reference-publish/references/project-conventions.md`의 구조, section naming, CSS single-entry, asset/font 폴더 규칙을 적용하되 기존 프로젝트는 명시적 요청 없이 마이그레이션하지 않는다. SVG asset은 내부 fill/stroke를 먼저 확인하고, `currentColor` SVG를 `<img>`로 사용할 때 부모 CSS color가 상속된다고 가정하지 않는다. 배경과 상태에 맞춰 inline SVG, CSS mask, explicit variant 또는 제공된 light/dark variant를 선택하며 일괄 inline이나 white hardcode를 기본 규칙으로 만들지 않는다. `actionableAuthoring`의 required-baseline과 affordance-driven 결정, 특히 nav/link/button feedback, tabs, simple state navigation, simple carousel control을 따른다. 지정된 primitive를 임의의 공통 opacity/scale/translateY 효과로 교체하거나 모든 CTA에 arrow를 추가하지 않는다. 모션 전용 범위는 건드리지 않고 기존 구조와 사용자 변경을 보존한다. 완료 전에 관련 테스트를 실행한다.
 """

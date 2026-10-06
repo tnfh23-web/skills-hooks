@@ -71,10 +71,11 @@ try {
   await designPage.setContent('<style>section,[data-motion-sample],[data-scene]{display:block;width:240px;height:80px}</style><section id="scene" data-motion-recipe="scene-transition"><div data-motion-sample data-state="previous-scene"></div><div data-scene class="active"></div></section>');
   const customMotionLanguage = { character: 'editorial', pace: 'measured', preferredFamilies: ['scene-transition'], bannedFamilies: [], preferredPrimitives: ['text-image-shift'], bannedPrimitives: [], sectionEntryVariation: 'section intent에 따라 변주', pointerUsage: 'affordance only', continuousMotionUsage: 'limited', scrollStory: 'contract' };
   const customDesignPlan = await discoverInteractionPlan(designPage, { designMode: 'design', sourceRoot: process.cwd(), motionLanguage: customMotionLanguage });
-  const defaultDesignPlan = await discoverInteractionPlan(designPage, { designMode: 'design', sourceRoot: process.cwd() });
+  await assert.rejects(discoverInteractionPlan(designPage, { designMode: 'design', sourceRoot: process.cwd() }), /authored motionLanguage/, 'O design discovery cannot substitute a fixed fallback for the authored concept');
+  const alternateDesignPlan = await discoverInteractionPlan(designPage, { designMode: 'design', sourceRoot: process.cwd(), motionLanguage: { ...customMotionLanguage, preferredPrimitives: ['crossfade'] } });
   assert.equal(customDesignPlan.motionLanguage, customMotionLanguage, 'O plan records the exact motionLanguage used by authoring');
   assert.equal(customDesignPlan.candidates[0].authoring.primitive, 'text-image-shift', 'O supplied motionLanguage changes production-path primitive selection');
-  assert.notEqual(customDesignPlan.candidates[0].authoring.primitive, defaultDesignPlan.candidates[0].authoring.primitive, 'O default and supplied motionLanguage produce different deterministic authoring');
+  assert.notEqual(customDesignPlan.candidates[0].authoring.primitive, alternateDesignPlan.candidates[0].authoring.primitive, 'O different authored languages produce different deterministic authoring');
   assert.equal(validateInteractionPlan(customDesignPlan).valid, true, 'O production discover plan validates');
   await designPage.close();
 

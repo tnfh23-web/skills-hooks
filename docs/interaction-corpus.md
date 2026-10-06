@@ -1,6 +1,12 @@
 # 상호작용 코퍼스와 자동화 범위
 
-이 문서는 `tools/interaction-patterns.mjs`의 사람이 읽는 대응표다. 기계 판정의 SSOT는 레지스트리이며 문서와 테스트는 그것을 따라야 한다. Authoring 단계에서는 이 corpus를 특정 사이트 효과의 복사 목록이 아니라 `semantic type → intent → interaction family → primitive → verification route`로 연결하는 interaction vocabulary로 사용한다.
+이 문서는 `tools/interaction-patterns.mjs`의 사람이 읽는 대응표다. 기계 판정의 SSOT는 레지스트리이며 문서와 테스트는 그것을 따라야 한다. 이 corpus는 퍼블리싱 QA의 vocabulary이며 새 디자인 방향을 정하는 워크플로가 아니다. 신규 디자인은 `frontend-experience`에서 콘텐츠와 경험을 먼저 설계한다.
+
+## Design 모드의 입력
+
+`--mode design --motion-language <json>`은 앞서 작성한 모션 방향을 QA 계약에 전달한다. 이 모드는 DOM에서 새로운 디자인을 자동 생성하지 않는다. motion language가 없으면 실행을 거부한다.
+
+현재 선택기는 `preferredFamilies`/`bannedFamilies` 및 `preferredPrimitives`/`bannedPrimitives`의 레지스트리 키를 사용한다. `pointerUsage`의 `minimal|limited|none`, `continuousMotionUsage`의 `minimal|restricted|limited|none`, `scrollStory`의 `avoid|none|static`은 해당 모션을 제한한다. 이 문자열 규칙은 QA 호환 계약이며 페이지 미학의 기본값이 아니다. `character`, `pace`, `sectionEntryVariation` 등 서술 필드는 의도를 기록하며 도구가 시각적 품질까지 판단하지 않는다. 이 값은 사용자가 원하는 경험에 맞게 작성하고 실제 화면에서 확인한다.
 
 ## Authoring 정책
 
