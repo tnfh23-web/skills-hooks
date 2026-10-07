@@ -101,7 +101,7 @@ Stop Hook은 기존 퍼블리싱 gate이며 이번 변경에서 새 사이트의
 
 ## 프로젝트 에이전트와 테스트
 
-커스텀 Design Director 대신 제공 시안의 측정·QA 계약만 맡는 Reference Planner를 둔다. 나머지 퍼블리싱 역할과 모델 설정은 유지하며 필요하고 위임이 허용된 작업에서만 사용한다. [agent-roles.md](docs/agent-roles.md)에 범위를 정리했다.
+커스텀 Design Director 대신 제공 시안의 측정·QA 계약만 맡는 Reference Planner를 둔다. 모델은 `gpt-6.1-sol`과 `gpt-6-luna`를 역할에 맞게 배정하며 필요하고 위임이 허용된 작업에서만 사용한다. [agent-roles.md](docs/agent-roles.md)에 모델·추론 강도·권한과 범위를 정리했다.
 
 ```powershell
 npm test

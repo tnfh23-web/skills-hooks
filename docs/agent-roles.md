@@ -12,25 +12,27 @@ Main이 요청과 작업 범위를 정하고 결과를 통합한다. 아래 6개
 
 ```mermaid
 flowchart TB
-    Main["Main<br/>범위 조율 · 결과 통합"]
-    Main --> Explorer["Explorer<br/>코드 · 자산 탐색"]
-    Main --> Planner["Reference Planner<br/>시안 측정 · QA 계획"]
-    Main --> UI["General UI Coder<br/>UI · 상태 구현"]
-    Main --> Motion["Motion Coder<br/>모션 · 입력 구현"]
-    Main --> Verifier["Verifier / Visual Critic<br/>화면 · QA 증거 비교"]
-    Main --> Debugger["Debugger<br/>재현 · 원인 진단"]
+    Main["Main<br/>gpt-6.1-sol · high<br/>범위 조율 · 결과 통합"]
+    Main --> Explorer["Explorer<br/>gpt-6-luna · medium<br/>코드 · 자산 탐색"]
+    Main --> Planner["Reference Planner<br/>gpt-6.1-sol · high<br/>시안 측정 · QA 계획"]
+    Main --> UI["General UI Coder<br/>gpt-6-luna · medium<br/>UI · 상태 구현"]
+    Main --> Motion["Motion Coder<br/>gpt-6.1-sol · high<br/>모션 · 입력 구현"]
+    Main --> Verifier["Verifier / Visual Critic<br/>gpt-6.1-sol · high<br/>화면 · QA 증거 비교"]
+    Main --> Debugger["Debugger<br/>gpt-6.1-sol · high<br/>재현 · 원인 진단"]
 ```
 
 | 역할 | 모델 | 추론 강도 | 기본 권한 |
 |---|---|---:|---|
-| Main | gpt-5.6-sol | high | 현재 세션 권한 |
-| Reference Planner | gpt-5.6-sol | high | read-only |
-| Verifier / Visual Critic | gpt-5.6-sol | high | read-only |
-| General UI Coder | gpt-5.6-luna | medium | workspace-write |
-| Motion Coder | gpt-5.6-terra | high | workspace-write |
-| Debugger | gpt-5.6-terra | high | read-only |
-| Explorer | gpt-5.6-terra | medium | read-only |
+| Main | gpt-6.1-sol | high | 현재 세션 권한 |
+| Reference Planner | gpt-6.1-sol | high | read-only |
+| Verifier / Visual Critic | gpt-6.1-sol | high | read-only |
+| General UI Coder | gpt-6-luna | medium | workspace-write |
+| Motion Coder | gpt-6.1-sol | high | workspace-write |
+| Debugger | gpt-6.1-sol | high | read-only |
+| Explorer | gpt-6-luna | medium | read-only |
 
-Reference Planner는 측정과 QA 계약을, Verifier는 콘셉트/실제 화면 비교와 시각/의미 증거를, Coder는 명시된 범위의 구현을, Debugger는 재현과 원인 진단을, Explorer는 읽기 전용 탐색을 담당한다. 같은 파일을 동시에 쓰는 역할은 만들지 않는다. Visual/Interaction/Motion/Geometry/Responsive QA는 Node/Playwright 도구이며 LLM 모델을 사용하지 않는다. 모델 배정은 기존 설정을 유지했다.
+Reference Planner는 측정과 QA 계약을, Verifier는 콘셉트/실제 화면 비교와 시각/의미 증거를, Coder는 명시된 범위의 구현을, Debugger는 재현과 원인 진단을, Explorer는 읽기 전용 탐색을 담당한다. 같은 파일을 동시에 쓰는 역할은 만들지 않는다. Visual/Interaction/Motion/Geometry/Responsive QA는 Node/Playwright 도구이며 LLM 모델을 사용하지 않는다.
 
-형식과 필드는 OpenAI의 [Codex Subagents 문서](https://learn.chatgpt.com/docs/agent-configuration/subagents?translationFallback=es-419)를 따르고, main 모델 ID는 [GPT-5.6 Sol 공식 모델 문서](https://developers.openai.com/api/docs/models/gpt-5.6-sol)를 기준으로 했다.
+모델 확인일은 **2026-10-07**이다. Main·계획·검수·모션·진단은 최신 Sol인 `gpt-6.1-sol`, 범위가 정해진 UI 구현과 읽기 전용 탐색은 `gpt-6-luna`를 선택했다. 추론 강도는 기존 high/medium을 유지한다. 역할을 지정하지 않은 서브에이전트의 기본값은 `gpt-6.1-sol` / `medium`이다. 이 배정은 작업 범위와 속도를 고려한 프로젝트 선택이며, 역할별 모델 실행 성능을 비교한 결과는 아니다.
+
+형식과 필드는 OpenAI의 [Codex Subagents 문서](https://learn.chatgpt.com/docs/agent-configuration/subagents)를 따른다. 모델 ID와 지원 추론 강도는 [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)를 확인했고, Codex 제공 여부는 [공식 변경 소식](https://learn.chatgpt.com/docs/changelog)과 현재 호출 환경의 지원 모델 목록을 대조했다. 다른 환경의 제공 여부는 계정·클라이언트·워크스페이스 설정에 따라 확인한다.

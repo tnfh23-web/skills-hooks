@@ -9,15 +9,18 @@ for (const file of files) {
 }
 JSON.parse(fs.readFileSync('.codex/hooks.json', 'utf8'));
 const config = fs.readFileSync('.codex/config.toml', 'utf8');
-assert.match(config, /model = "gpt-5\.6-sol"/);
+assert.match(config, /^model = "gpt-6\.1-sol"$/m);
+assert.match(config, /^model_reasoning_effort = "high"$/m);
 assert.match(config, /\[agents\]/);
+assert.match(config, /^default_subagent_model = "gpt-6\.1-sol"$/m);
+assert.match(config, /^default_subagent_reasoning_effort = "medium"$/m);
 const agentExpectations = new Map([
-  ['reference-planner.toml', ['gpt-5.6-sol', 'high']],
-  ['verifier-visual-critic.toml', ['gpt-5.6-sol', 'high']],
-  ['general-ui-coder.toml', ['gpt-5.6-luna', 'medium']],
-  ['motion-coder.toml', ['gpt-5.6-terra', 'high']],
-  ['debugger.toml', ['gpt-5.6-terra', 'high']],
-  ['explorer.toml', ['gpt-5.6-terra', 'medium']]
+  ['reference-planner.toml', ['gpt-6.1-sol', 'high']],
+  ['verifier-visual-critic.toml', ['gpt-6.1-sol', 'high']],
+  ['general-ui-coder.toml', ['gpt-6-luna', 'medium']],
+  ['motion-coder.toml', ['gpt-6.1-sol', 'high']],
+  ['debugger.toml', ['gpt-6.1-sol', 'high']],
+  ['explorer.toml', ['gpt-6-luna', 'medium']]
 ]);
 for (const [file, [model, effort]] of agentExpectations) {
   const toml = fs.readFileSync(`.codex/agents/${file}`, 'utf8');
