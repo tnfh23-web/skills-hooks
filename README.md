@@ -4,6 +4,38 @@
 
 디자인의 두 기준은 **풍부한 인터랙션**과 **AI 티가 나지 않는 것**이다. 기존의 “정적 화면을 먼저 만든 뒤 DOM에서 효과를 골라 붙이는 디자인 흐름”과 커스텀 Design Director 역할을 교체했다. 시안 측정·픽셀 비교·상태 검증·반응형 검사·소스 최신성을 확인하는 퍼블리싱 도구는 유지한다.
 
+## 한눈에 보는 조직도
+
+Main이 요청과 작업 범위를 정하고 결과를 통합한다. 아래 6개 역할은 **필요하고 위임이 허용된 경우에만** 선택한다.
+
+```mermaid
+flowchart TB
+    Main["Main<br/>요청 판단 · 범위 조율 · 결과 통합"]
+    subgraph Investigate["탐색 · 계획"]
+        Explorer["Explorer<br/>코드 · 자산 · 의존 관계 탐색"]
+        Planner["Reference Planner<br/>제공 시안 측정 · QA 계약 계획"]
+    end
+    subgraph Implement["구현"]
+        UI["General UI Coder<br/>UI · 상태 상호작용 구현"]
+        Motion["Motion Coder<br/>콘텐츠별 모션 · 입력 구현"]
+    end
+    subgraph Review["검증 · 진단"]
+        Verifier["Verifier / Visual Critic<br/>시안 · 실제 화면 · QA 증거 비교"]
+        Debugger["Debugger<br/>오류 재현 · 원인 진단"]
+    end
+    Main --> Explorer
+    Main --> Planner
+    Main --> UI
+    Main --> Motion
+    Main --> Verifier
+    Main --> Debugger
+```
+
+스킬은 각 작업의 지침이고, QA는 Node/Playwright 실행 도구이며, Stop Hook은 완료 시 검증 보고서를 확인한다. 에이전트 역할과는 별개다.
+
+- [전체 구조와 스킬·QA·Hook 연결도](docs/structure.md)
+- [역할별 모델·권한과 책임](docs/agent-roles.md)
+
 ## 어떤 흐름을 사용할까
 
 | 요청 | 진입점 | 결과 |
