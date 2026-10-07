@@ -1,6 +1,6 @@
 # 저장소 구조와 연결도
 
-[README의 역할 조직도](../README.md#한눈에-보는-조직도) · [역할별 모델·권한](agent-roles.md)
+[README의 전체 흐름도](../README.md#한눈에-보는-조직도) · [역할별 모델·권한](agent-roles.md)
 
 ## 구성별 역할
 
@@ -15,42 +15,11 @@
 
 ## 작업 흐름
 
-실선은 작업 순서, 점선은 조건부 연결이다. 스킬·도구·Hook은 다음과 같이 이어진다.
+사각형은 작업 단계, 마름모는 요청·검증에 따른 분기다. 문제가 발견되면 구현 단계로 돌아가 수정하고 관련 검수를 반복한다.
 
-```mermaid
-flowchart TB
-    Request["요청 판단 · AGENTS.md"]
-    New["frontend-experience<br/>신규 디자인 · 리디자인"]
-    Reference["reference-publish<br/>제공 시안 구현"]
-    Small["기존 화면의 작은 수정<br/>해당 범위와 기존 디자인 유지"]
-    Concept["콘텐츠 기반 콘셉트<br/>인터랙션 맵 · 타입 · 레이아웃"]
-    Measure["레퍼런스 측정<br/>reference-measure / reference-spec"]
-    Build["구현<br/>animation-guide + 필요한 패턴 스킬"]
-    Plugin["Build Web Apps<br/>frontend-app-builder · 설치된 경우"]
-    Browser["실제 브라우저 확인<br/>시안 비교 · 입력 · 반응형 · 성능"]
-    Ready["interaction-ready<br/>자동 QA 순서 조율"]
-    Plan["interaction-plan<br/>DOM · 상태 · 검증 계약 작성/검토"]
-    QA["Node / Playwright QA<br/>Visual · Geometry · Responsive<br/>Interaction · Motion"]
-    Reports["QA 산출물<br/>actual / diff / reports / source fingerprint"]
-    Hook["Stop Hook<br/>필수 PASS · 대상 소스 · 최신성 확인"]
-    Fix["불일치 · 누락 · 오류 수정"]
-    Finish["최종 확인<br/>실제 경험과 필요한 QA 증거 함께 판단"]
+![디자인과 레퍼런스 퍼블리싱 작업 흐름도](diagrams/workflow.png)
 
-    Request --> New --> Concept --> Build
-    Request --> Reference --> Measure --> Build
-    Request --> Small --> Build
-    New -.-> Plugin
-    Plugin -.-> Concept
-    Build --> Browser
-    Browser -. "자동 QA 적용 시" .-> Ready
-    Ready --> Plan --> QA --> Reports
-    Reports -. "Hook이 연결된 환경" .-> Hook
-    Browser -->|문제 발견| Fix
-    Browser -->|검수 결과| Finish
-    Hook -->|검증 실패 · 오래된 증거| Fix
-    Hook -->|검증 충족| Finish
-    Fix --> Build
-```
+[Mermaid 원본](diagrams/workflow.mmd) · [SVG 확대 보기](diagrams/workflow.svg)
 
 새 디자인의 콘셉트와 인터랙션 맵은 구현 **전**에 만든다. 구현 후의 `interaction-plan.json`은 자동 QA 계약이다. `design` 모드는 앞서 작성한 `motion-language.json`을 전달받는다.
 
@@ -79,7 +48,7 @@ flowchart TB
 ```text
 skills-hooks/
 ├─ AGENTS.md                      요청 분기와 공통 작업 기준
-├─ README.md                      시작점과 역할 조직도
+├─ README.md                      시작점과 전체 작업 흐름도
 ├─ .codex/
 │  ├─ config.toml                 프로젝트 모델·에이전트 설정
 │  ├─ agents/                     선택 가능한 6개 역할 정의
@@ -96,7 +65,8 @@ skills-hooks/
 ├─ docs/
 │  ├─ structure.md                현재 문서: 구조와 연결도
 │  ├─ agent-roles.md              역할별 모델·권한·책임
-│  └─ interaction-corpus.md       패턴 레지스트리와 검증 계약
+│  ├─ interaction-corpus.md       패턴 레지스트리와 검증 계약
+│  └─ diagrams/                   Mermaid 원본 · PNG · SVG
 └─ package.json                  QA·테스트 명령과 의존성
 ```
 

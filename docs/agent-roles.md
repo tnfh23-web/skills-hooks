@@ -1,10 +1,25 @@
 # Codex 프로젝트 에이전트 역할
 
-[역할 조직도](../README.md#한눈에-보는-조직도) · [스킬·QA·Hook 연결도](structure.md)
+[전체 작업 흐름도](../README.md#한눈에-보는-조직도) · [스킬·QA·Hook 구성](structure.md)
 
 프로젝트 설정은 `.codex/config.toml`, 역할별 정의는 `.codex/agents/*.toml`에 둔다. 필요하고 위임이 허용된 작업에서만 사용하며 모든 작업에 역할별 에이전트를 생성하라는 요구가 아니다. 글로벌 설정이나 이미 실행 중인 세션을 소급 변경하지 않는다.
 
 기존 **Planner / Design Director**는 제거했다. 신규 디자인의 기본 진입점은 `frontend-experience`이며, 설치된 Build Web Apps의 `frontend-app-builder`를 사용할 수 있다. 아래 Reference Planner는 제공 시안의 측정·QA 계획만 담당한다.
+
+## 필요할 때 선택하는 역할
+
+Main이 요청과 작업 범위를 정하고 결과를 통합한다. 아래 6개 역할은 필요하고 위임이 허용된 경우에만 선택한다. 스킬은 작업 지침이며 QA는 Node/Playwright 도구로, 에이전트와는 별개다.
+
+```mermaid
+flowchart TB
+    Main["Main<br/>범위 조율 · 결과 통합"]
+    Main --> Explorer["Explorer<br/>코드 · 자산 탐색"]
+    Main --> Planner["Reference Planner<br/>시안 측정 · QA 계획"]
+    Main --> UI["General UI Coder<br/>UI · 상태 구현"]
+    Main --> Motion["Motion Coder<br/>모션 · 입력 구현"]
+    Main --> Verifier["Verifier / Visual Critic<br/>화면 · QA 증거 비교"]
+    Main --> Debugger["Debugger<br/>재현 · 원인 진단"]
+```
 
 | 역할 | 모델 | 추론 강도 | 기본 권한 |
 |---|---|---:|---|

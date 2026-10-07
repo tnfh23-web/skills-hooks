@@ -1,0 +1,53 @@
+%%{init: {"theme":"base","fontFamily":"Arial, Malgun Gothic, sans-serif","themeCSS":".nodeLabel, .edgeLabel { font-family: Arial, Malgun Gothic, sans-serif !important; }","themeVariables":{"fontFamily":"Arial, Malgun Gothic, sans-serif","fontSize":"18px","lineColor":"#353535","primaryColor":"#eee9ff","primaryBorderColor":"#8b6cff","primaryTextColor":"#191919","edgeLabelBackground":"#ffffff"},"flowchart":{"curve":"rounded","nodeSpacing":40,"rankSpacing":48,"wrappingWidth":320,"htmlLabels":true}}}%%
+flowchart TB
+    Request["사용자 요청 + 제공 자료"]
+    Route{"요청 분기<br/>Main · AGENTS.md"}
+    Reference["REFERENCE PUBLISH<br/>reference-publish"]
+    Experience["CONTENT EXPERIENCE<br/>frontend-experience"]
+    Measure["시안 측정 · 구현 계획<br/>reference-measure / reference-spec"]
+    Concept["콘셉트 · 디자인 시스템 · 인터랙션 맵<br/>설치된 Build Web Apps 흐름 사용"]
+    Scope{"구현까지<br/>요청했는가?"}
+    DesignReview["콘셉트 · 시안 검토 / 보완"]
+    DesignDone["디자인 결과 전달"]
+    Build["UI · 상태 · 모션 구현<br/>animation-guide + 필요한 패턴 스킬"]
+    Browser["실제 브라우저 검수<br/>시안 비교 · 입력 · 반응형 · 성능"]
+    NeedQA{"자동 QA를<br/>적용하는가?"}
+    Contract["QA 계약 작성 · 검토<br/>interaction-ready / interaction-plan"]
+    QA["퍼블리싱 QA 실행<br/>Visual · Geometry · Responsive<br/>Interaction · Motion"]
+    Evidence["actual · diff · report<br/>대상 소스와 최신성 기록"]
+    Gate{"필요한 검증 충족?<br/>연결된 환경에서는<br/>Stop Hook 확인"}
+    FinalReview["최종 화면 · 경험 비교<br/>자동 PASS와 디자인 품질을 함께 판단"]
+    Quality{"수정할 문제가<br/>있는가?"}
+    Fix["문제 재현 · 수정<br/>관련 검수 / QA 재실행"]
+    Done["구현 결과 · 검증 · 한계 전달"]
+
+    Request --> Route
+    Route -->|제공 시안 구현| Reference
+    Route -->|신규 디자인 / 디자인만 요청| Experience
+    Route -->|기존 화면의 작은 수정| Build
+    Reference --> Measure --> Build
+    Experience --> Concept --> Scope
+    Scope -->|구현 포함| Build
+    Scope -->|디자인만| DesignReview --> DesignDone
+    Build --> Browser --> NeedQA
+    NeedQA -->|적용| Contract --> QA --> Evidence --> Gate
+    NeedQA -->|미적용| FinalReview
+    Gate -->|충족| FinalReview
+    Gate -->|실패 / 오래된 증거| Fix
+    FinalReview --> Quality
+    Quality -->|있음| Fix
+    Quality -->|없음| Done
+    Fix --> Build
+
+    classDef entry fill:#eee9ff,stroke:#8b6cff,stroke-width:1.3px,color:#191919;
+    classDef decision fill:#eee9ff,stroke:#8b6cff,stroke-width:1.3px,color:#191919;
+    classDef plan fill:#e5f1ff,stroke:#4795d3,stroke-width:1.3px,color:#191919;
+    classDef implementation fill:#eaf5ed,stroke:#649374,stroke-width:1.3px,color:#191919;
+    classDef verify fill:#fff3df,stroke:#c2964d,stroke-width:1.3px,color:#191919;
+    classDef result fill:#f0f0f0,stroke:#777777,stroke-width:1.3px,color:#191919;
+    class Request,Reference,Experience entry;
+    class Route,Scope,NeedQA,Gate,Quality decision;
+    class Measure,Concept,DesignReview,Contract plan;
+    class Build,Fix implementation;
+    class Browser,QA,Evidence,FinalReview verify;
+    class Done,DesignDone result;

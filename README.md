@@ -6,35 +6,15 @@
 
 ## 한눈에 보는 조직도
 
-Main이 요청과 작업 범위를 정하고 결과를 통합한다. 아래 6개 역할은 **필요하고 위임이 허용된 경우에만** 선택한다.
+사용자 요청에서 시작해 **요청 분기 → 콘셉트/시안 측정 → 구현 → 실제 검수 → QA → 수정/완료**로 이어지는 전체 흐름이다.
 
-```mermaid
-flowchart TB
-    Main["Main<br/>요청 판단 · 범위 조율 · 결과 통합"]
-    subgraph Investigate["탐색 · 계획"]
-        Explorer["Explorer<br/>코드 · 자산 · 의존 관계 탐색"]
-        Planner["Reference Planner<br/>제공 시안 측정 · QA 계약 계획"]
-    end
-    subgraph Implement["구현"]
-        UI["General UI Coder<br/>UI · 상태 상호작용 구현"]
-        Motion["Motion Coder<br/>콘텐츠별 모션 · 입력 구현"]
-    end
-    subgraph Review["검증 · 진단"]
-        Verifier["Verifier / Visual Critic<br/>시안 · 실제 화면 · QA 증거 비교"]
-        Debugger["Debugger<br/>오류 재현 · 원인 진단"]
-    end
-    Main --> Explorer
-    Main --> Planner
-    Main --> UI
-    Main --> Motion
-    Main --> Verifier
-    Main --> Debugger
-```
+![사용자 요청부터 디자인·퍼블리싱·검증·완료까지의 흐름도](docs/diagrams/workflow.png)
 
-스킬은 각 작업의 지침이고, QA는 Node/Playwright 실행 도구이며, Stop Hook은 완료 시 검증 보고서를 확인한다. 에이전트 역할과는 별개다.
+디자인만 요청하면 시안 검토와 결과 전달에서 끝난다. 기존 화면의 작은 수정은 콘셉트 제작을 다시 시작하지 않고 구현으로 이어진다. 자동 QA는 적용한 작업에서 수행하고 Stop Hook은 연결된 환경에서 완료 검증을 확인한다.
 
 - [전체 구조와 스킬·QA·Hook 연결도](docs/structure.md)
 - [역할별 모델·권한과 책임](docs/agent-roles.md)
+- [흐름도 Mermaid 원본](docs/diagrams/workflow.mmd)
 
 ## 어떤 흐름을 사용할까
 
