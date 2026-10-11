@@ -25,6 +25,7 @@
 | 실제 상태·모션 검증 | [interaction-ready](.agents/skills/interaction-ready/SKILL.md) / [interaction-plan](.agents/skills/interaction-plan/SKILL.md) | DOM 계약 → 상태/모션 QA → 완료 gate |
 | 모션 구현 | [animation-guide](.agents/skills/animation-guide/SKILL.md) + 필요한 패턴 스킬 | 입력·반응형·움직임 감소·성능을 보존한 구현 |
 | 제작 과정 페이지 | [프로세스 페이지 지침](.agents/skills/frontend-experience/references/process-pages.md) | 기획·디자인·제작 과정과 최신 실제 화면 |
+| 파일 역할 정리·기능 개발 후 갱신 | [code-map](.agents/skills/code-map/SKILL.md) | 파일 역할표·기능 흐름·수정 위치와 문서 최신성 검사 |
 
 기존 화면의 작은 수정에는 전체 콘셉트 제작을 다시 시작하지 않는다. 사용자가 선택한 스택·기존 브랜드·최신 지시가 이 저장소의 기본값보다 우선한다.
 
@@ -58,6 +59,22 @@
 `frontend-experience`는 자신의 두 reference 파일을 포함하므로 **폴더 전체**를 전달한다. 순수 디자인 지침으로 단독 사용할 수 있다. 퍼블리싱 자동 명령을 사용하려면 이 저장소의 `tools/`, 의존성과 관련 패턴 스킬도 접근 가능해야 한다. 명령은 이 도구 저장소에서 실행하며 `--source-root`로 대상 프로젝트를 지정한다.
 
 다른 프로젝트의 기존 `AGENTS.md`를 통째로 덮어쓰지 않는다. `.codex/config.toml`과 Hook을 복사하거나 글로벌 설정을 바꾸는 것은 별도 선택이다. 저장소를 수정하거나 링크를 열었다고 모델이 영구 학습하거나 모든 대화에 자동 적용되는 것은 아니다.
+
+## 기능 개발과 함께 유지하는 파일 역할표
+
+[현재 저장소의 파일 역할표](docs/code-map.md)는 각 소스의 책임과 도구가 연결되는 흐름을 설명한다. 앱 프로젝트에서도 `docs/code-map.md` 한 곳에 화면·훅·서버·DB·설정·테스트의 역할과 기능별 수정 위치를 정리한다. TypeScript 사용을 강제하지 않고 실제 `.tsx/.ts/.jsx/.js/.mjs` 등의 파일을 읽는다.
+
+`code-map` 스킬과 루트 `AGENTS.md`는 기능 수정 완료 전에 역할표와 흐름을 함께 검토·갱신하도록 연결했다. 검사기는 문서 누락·삭제된 경로·코드 변경 후 미검토 파일을 찾으며 설명을 자동으로 추측하지 않는다. 백그라운드에서 문장을 작성하는 Hook이나 전역 설정 설치를 뜻하지 않는다.
+
+```powershell
+npm run docs:check
+# 코드와 문서를 검토한 뒤 검토 기준을 기록한다.
+npm run docs:stamp
+# 다른 프로젝트: 해당 프로젝트에 스킬 폴더 전체를 복사한 뒤 실행
+node .agents/skills/code-map/scripts/check-code-map.mjs --root C:/target-project
+```
+
+기존 QA Stop Hook은 유지한다. 코드 역할표 검사와 의미 검토를 퍼블리싱 QA PASS로 대신하지 않는다.
 
 ## 유지한 퍼블리싱 자동화
 

@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "docs:check": "node .agents/skills/code-map/scripts/check-code-map.mjs",
+    "docs:stamp": "node .agents/skills/code-map/scripts/check-code-map.mjs --stamp",
+    "test:code-map": "node --test tests/code-map.test.mjs",
     "qa": "node tools/visual-qa.mjs",
     "qa:spec": "node tools/reference-spec.mjs",
     "qa:measure": "node tools/reference-measure.mjs",
@@ -19,7 +22,7 @@
     "test:interaction-motion": "node tests/interaction-motion-contract.test.mjs",
     "test:interaction-authoring": "node tests/interaction-authoring.test.mjs",
     "test:interaction-plan-cli": "node tests/interaction-plan-cli.test.mjs",
-    "test": "npm run test:syntax && npm run test:qa && npm run test:workflow && npm run test:interaction-motion && npm run test:interaction-authoring && npm run test:interaction-plan-cli && npm run test:hook"
+    "test": "npm run test:syntax && npm run test:qa && npm run test:workflow && npm run test:interaction-motion && npm run test:interaction-authoring && npm run test:interaction-plan-cli && npm run test:hook && npm run test:code-map && npm run docs:check"
   },
   "devDependencies": {
     "pixelmatch": "^6.0.0",

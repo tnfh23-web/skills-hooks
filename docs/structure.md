@@ -8,7 +8,7 @@
 |---|---|---|
 | 프로젝트 지침 | [AGENTS.md](../AGENTS.md) | 요청에 맞는 진입점과 디자인·검증 기준 |
 | 에이전트 설정 | [.codex/config.toml](../.codex/config.toml), `.codex/agents/` | Main 설정과 선택적으로 사용할 6개 역할 |
-| 스킬 11개 | `.agents/skills/` | 디자인·퍼블리싱·모션·QA 작업 지침 |
+| 스킬 12개 | `.agents/skills/` | 디자인·퍼블리싱·모션·QA·파일 역할표 관리 지침 |
 | QA 도구 | `tools/`, [package.json](../package.json) | Node/Playwright로 실행하는 측정·브라우저 검사 |
 | Stop Hook | [.codex/hooks.json](../.codex/hooks.json) | 연결된 환경에서 Stop 시 완료 gate 실행 |
 | 동작 테스트 | `tests/` | 도구·계약·Hook의 회귀 검사 |
@@ -33,6 +33,7 @@
 | 퍼블리싱 | [reference-publish](../.agents/skills/reference-publish/SKILL.md) | 제공된 시안을 충실히 구현 |
 | QA 조율 | [interaction-ready](../.agents/skills/interaction-ready/SKILL.md) | QA 계약·패턴 검증·완료 gate 연결 |
 | QA 계약 | [interaction-plan](../.agents/skills/interaction-plan/SKILL.md) | DOM selector와 상태·증거·검증 경로 연결 |
+| 코드 문서 | [code-map](../.agents/skills/code-map/SKILL.md) | 기능 개발 후 파일 역할표·처리 흐름·수정 위치 갱신 |
 | 모션 공통 | [animation-guide](../.agents/skills/animation-guide/SKILL.md) | 입력·반응형·움직임 감소·성능을 유지한 모션 구현 |
 | 모션 패턴 | [carousel-state](../.agents/skills/carousel-state/SKILL.md) | 캐러셀 상태와 투영 검증 |
 | 모션 패턴 | [marquee](../.agents/skills/marquee/SKILL.md) | 연속 흐름 |
@@ -55,7 +56,8 @@ skills-hooks/
 │  ├─ hooks.json                  Stop 이벤트 연결 설정
 │  └─ hooks/
 │     └─ stop-reference-publish.mjs   QA 보고서와 소스 최신성 검사
-├─ .agents/skills/                위 표의 11개 스킬
+├─ .agents/skills/                위 표의 12개 스킬
+│  ├─ code-map/                  파일 역할표 갱신 지침과 검사기
 │  ├─ frontend-experience/
 │  │  └─ references/              프로세스 페이지 · 모션/입력 기준
 │  └─ reference-publish/
@@ -64,6 +66,7 @@ skills-hooks/
 ├─ tests/                        동작 테스트와 HTML fixtures
 ├─ docs/
 │  ├─ structure.md                현재 문서: 구조와 연결도
+│  ├─ code-map.md                 실제 소스 역할과 도구 처리 흐름
 │  ├─ agent-roles.md              역할별 모델·권한·책임
 │  ├─ interaction-corpus.md       패턴 레지스트리와 검증 계약
 │  └─ diagrams/                   Mermaid 원본 · PNG · SVG
